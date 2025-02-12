@@ -23,49 +23,138 @@ def set_log_level(level: LogLevel) -> None:
         level (LogLevel): The logging level to set.
     """
     ...
-
 class VideoReader:
-    def __init__(self, input_path: str, num_threads: int = os.cpu_count() / 2,
-                 device: str = "cuda", filters = Optional[list[str]] ) -> None:
+    def __init__(self, input_path: str, num_threads: int = os.cpu_count() // 2,
+                 filters: Optional[List['FilterBase']] = None, tensor_shape: str = "HWC") -> None:
         """
         Initialize the VideoReader object.
 
         Args:
             input_path (str): Path to the video file.
-            device (str): Device to be used. Default is "cuda".
-            filters (Optional[list[str]]): List of filters to apply to the video.
-                - EX. filters = [("scale", "1280:720"), ("hue", "0.5")]
+            num_threads (int, optional): Number of threads for decoding. Defaults to half of CPU cores.
+            filters (Optional[List[FilterBase]]): List of filters to apply to the video.
+            tensor_shape (str, optional): Shape format of the output tensor. Defaults to "HWC".
         """
         ...
 
-    def __call__(self, frame_range: Union[Tuple[int, int], List[int]]) -> 'VideoReader':
+    class Audio:
+        def tensor(self) -> torch.Tensor:
+            """
+            Retrieve the audio data as a PyTorch tensor.
+
+            Returns:
+                torch.Tensor: The extracted audio data.
+            """
+            ...
+
+        def file(self, output_path: str) -> bool:
+            """
+            Extract audio from the video and save it as a separate file.
+
+            Args:
+                output_path (str): Path to save the extracted audio file.
+
+            Returns:
+                bool: True if extraction is successful, False otherwise.
+            """
+            ...
+
+        @property
+        def sample_rate(self) -> int:
+            """Get the audio sample rate (Hz)."""
+            ...
+
+        @property
+        def channels(self) -> int:
+            """Get the number of audio channels."""
+            ...
+
+        @property
+        def bit_depth(self) -> int:
+            """Get the bit depth of the audio."""
+            ...
+
+        @property
+        def codec(self) -> str:
+            """Get the audio codec name."""
+            ...
+
+        @property
+        def bitrate(self) -> int:
+            """Get the audio bitrate."""
+            ...
+            
+    def get_audio(self) -> 'Audio':
         """
-        Set the frame range for the video reader.
-
-        Allows you to specify a range of frames to read from the video.
-
-        Example:
-            with VideoReader('input.mp4')([10, 20]) as reader:
-                for frame in reader:
-                    print(f"Processing {frame}")
-
-        Args:
-            frame_range (Union[Tuple[int, int], List[int]]): A tuple or list containing the start and end frame indices.
+        Retrieve the Audio object for handling audio extraction and processing.
 
         Returns:
-            VideoReader: The video reader object itself.
-
-        Raises:
-            ValueError: If `frame_range` is not a tuple or list of two integers.
+            Audio: An instance of the Audio class.
         """
+        ...
+
+
+    @property
+    def audio(self) -> 'Audio':
+        """
+        Retrieve the Audio object for handling audio extraction and processing.
+
+        Returns:
+            Audio: An instance of the Audio class.
+        """
+        ...
+        
+    @property
+    def width(self) -> int:
+        """Get the video width."""
+        ...
+
+    @property
+    def height(self) -> int:
+        """Get the video height."""
+        ...
+
+    @property
+    def fps(self) -> float:
+        """Get the frames per second of the video."""
+        ...
+
+    @property
+    def min_fps(self) -> float:
+        """Get the minimum frames per second of the video."""
+        ...
+
+    @property
+    def max_fps(self) -> float:
+        """Get the maximum frames per second of the video."""
+        ...
+
+    @property
+    def duration(self) -> float:
+        """Get the duration of the video in seconds."""
+        ...
+
+    @property
+    def total_frames(self) -> int:
+        """Get the total number of frames in the video."""
+        ...
+
+    @property
+    def pixel_format(self) -> str:
+        """Get the pixel format of the video."""
+        ...
+
+    @property
+    def has_audio(self) -> bool:
+        """Check if the video contains audio."""
         ...
 
     def read_frame(self) -> torch.Tensor:
         """
-        Read a frame from the video.
+        Read the next frame from the video.
 
         Returns:
-            Union[torch.Tensor: The frame data, as a torch.Tensor.
+            torch.Tensor: The frame data as a PyTorch tensor.
         """
         ...
 
@@ -77,7 +166,17 @@ class VideoReader:
             timestamp (float): Timestamp in seconds.
 
         Returns:
-            bool: True if seek was successful, otherwise False.
+            bool: True if the seek was successful, otherwise False.
+        """
+        ...
+
+    def set_range(self, start: Union[int, float], end: Union[int, float]) -> None:
+        """
+        Set the playback range using either **frame numbers (int)** or **timestamps (float)**.
+
+        Args:
+            start (Union[int, float]): Starting frame number or timestamp.
+            end (Union[int, float]): Ending frame number or timestamp.
         """
         ...
 
@@ -90,43 +189,18 @@ class VideoReader:
         """
         ...
 
-    def get_properties(self) -> dict:
-        """
-        Get properties of the video.
-
-        Returns:
-            A dictionary containing specific video properties.
-            Contains the following:
-            - width: Width of the video.
-            - height: Height of the video.
-            - fps: Frames per second of the video.
-            - min_fps: Minimum frames per second of the video.
-            - max_fps: Maximum frames per second of the video.
-            - duration: Duration of the video in seconds.
-            - total_frames: Total number of frames in the video.
-            - pixel_format: Pixel format of the video.
-            - has_audio: Whether the video has audio.
-            - audio_bitrate: Audio bitrate of the video.
-            - audio_channels: Number of audio channels.
-            - audio_sample_rate: Audio sample rate.
-            - audio_codec: Audio codec.
-            - bit_depth: Bit depth of the video.
-            - aspect_ratio: Aspect ratio of the video.
-            - codec: Video codec.
-        """
-        ...
     def __len__(self) -> int:
         """
         Get the total number of frames in the video.
 
         Returns:
-            int: Number of frames.
+            int: Number of frames in the video.
         """
         ...
 
     def __iter__(self) -> 'VideoReader':
         """
-        Get the iterator object for the video reader.
+        Get an iterator for iterating over frames.
 
         Returns:
             VideoReader: The video reader object itself.
@@ -135,43 +209,19 @@ class VideoReader:
 
     def __next__(self) -> torch.Tensor:
         """
-        Get the next frame in the video.
+        Retrieve the next frame in the video.
 
         Returns:
-          torch.Tensor: The next frame as a torch.Tensor.
-        
-        Raises:
-            StopIteration: When no more frames are available.
+            torch.Tensor: The next frame as a PyTorch tensor.
         """
         ...
 
-    def __enter__(self) -> 'VideoReader':
+    def get_properties(self) -> dict:
         """
-        Enter the context manager.
+        Retrieve all properties of the video as a dictionary.
 
         Returns:
-            VideoReader: The video reader object itself.
-        """
-        ...
-
-    def __exit__(self, exc_type: Optional[type], exc_value: Optional[BaseException], traceback: Optional[Any]) -> bool:
-        """
-        Exit the context manager.
-
-        Args:
-            exc_type (Optional[type]): The exception type, if any.
-            exc_value (Optional[BaseException]): The exception value, if any.
-            traceback (Optional[Any]): The traceback object, if any.
-
-        Returns:
-            bool: False to propagate exceptions, True to suppress them.
-        """
-        ...
-
-
-    def reset(self) -> None:
-        """
-        Reset the video reader to the beginning of the video.
+            dict: A dictionary containing metadata about the video.
         """
         ...
 

@@ -3,7 +3,7 @@ import subprocess
 import shutil
 
 # Hardcoded version for both CPU and CUDA builds
-VERSION = "0.5.3"
+VERSION = "0.6.0"
 
 def build_package(is_cuda=False):
     """
@@ -64,7 +64,7 @@ def main():
     build_package(is_cuda=False)
 
     # Build the CUDA version
-    build_package(is_cuda=True)
+   # build_package(is_cuda=True)
 
 if __name__ == "__main__":
     main()

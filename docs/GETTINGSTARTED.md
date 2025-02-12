@@ -12,12 +12,8 @@ def process_frame(frame):
     # Implement your frame processing logic here
     pass
 
-# Choose device based on your installation
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
 with cx.VideoReader(
     "path/to/input/video.mp4",
-    device=device     # "cpu" or "cuda"
 ) as reader:
     for frame in reader:
         # Frame is a PyTorch tensor in HWC format
@@ -37,7 +33,6 @@ with cx.VideoReader(
 ```python
 reader = cx.VideoReader(
     "path/to/video.mp4",
-    device="cuda",        # Use "cpu" or "cuda"
 )
 ```
 

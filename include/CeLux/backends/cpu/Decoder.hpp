@@ -12,8 +12,8 @@ class Decoder : public celux::Decoder
             std::vector<std::shared_ptr<FilterBase>> filters)
         : celux::Decoder( numThreads, filters)
     {
-        isHwAccel = false;
         initialize(filePath);
+        initializeAudio();
     }
 
     // No need to override methods unless specific behavior is needed

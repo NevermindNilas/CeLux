@@ -381,6 +381,57 @@ void Frame::fillData(uint8_t* data, int size, int plane)
                 size);
 }
 
+AVColorSpace Frame::getColorSpace() const
+{
+    // If the AVFrame hasn't set colorspace, it is typically AVCOL_SPC_UNSPECIFIED (0).
+    // Return it as-is, or do a direct guess here. We'll just return it directly for
+    // clarity:
+    return static_cast<AVColorSpace>(frame->colorspace);
+}
+
+AVColorRange Frame::getColorRange() const
+{
+    // If the AVFrame hasn't set color_range, it is typically AVCOL_RANGE_UNSPECIFIED
+    // (0). Return it as-is. (We'll do the "guessing" in a separate method.)
+    return static_cast<AVColorRange>(frame->color_range);
+}
+
+Frame::ColorInfo Frame::getOrGuessColorInfo() const
+{
+    ColorInfo info;
+
+    // 1) Grab what the frame actually says:
+    info.space = static_cast<AVColorSpace>(frame->colorspace);
+    info.range = static_cast<AVColorRange>(frame->color_range);
+
+    // 2) If unspecified, guess color space based on resolution
+    //    This is a typical heuristic: if width > 1280 or height > 576 => BT.709, else
+    //    BT.601 Real logic depends on your environment, so adjust as needed.
+    if (info.space == AVCOL_SPC_UNSPECIFIED)
+    {
+        if (frame->width > 1280 || frame->height > 576)
+        {
+            info.space = AVCOL_SPC_BT709; // HD content
+        }
+        else
+        {
+            info.space =
+                AVCOL_SPC_BT470BG; // or AVCOL_SPC_SMPTE170M, typical SD content
+        }
+    }
+
+    // 3) If unspecified range, guess limited range (MPEG) for typical broadcast or
+    // camera captures.
+    //    Some screen captures or JPEG-based inputs might be full range.
+    if (info.range == AVCOL_RANGE_UNSPECIFIED)
+    {
+        // The default guess is often limited range (16-235)
+        info.range = AVCOL_RANGE_MPEG;
+    }
+
+    return info;
+}
+
 /**
  * @brief Overload the << operator to print Frame information.
  *

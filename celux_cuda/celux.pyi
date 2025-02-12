@@ -25,47 +25,56 @@ def set_log_level(level: LogLevel) -> None:
     ...
 
 class VideoReader:
-    def __init__(self, input_path: str, num_threads: int = os.cpu_count() / 2,
-                 device: str = "cuda", filters = list[FilterBase] ) -> None:
+    def __init__(self, input_path: str, num_threads: int = os.cpu_count() // 2,
+                 filters: Optional[List['FilterBase']] = None, tensor_shape: str = "HWC") -> None:
         """
         Initialize the VideoReader object.
 
         Args:
             input_path (str): Path to the video file.
-            device (str): Device to be used. Default is "cuda".
-            filters (Optional[list[str]]): List of filters to apply to the video.
-                - EX. filters = [("scale", "1280:720"), ("hue", "0.5")]
+            num_threads (int, optional): Number of threads for decoding. Defaults to half of CPU cores.
+            filters (Optional[List[FilterBase]]): List of filters to apply to the video.
+                - Example: filters = [("scale", "1280:720"), ("hue", "0.5")]
+            tensor_shape (str, optional): Shape format of the output tensor. Defaults to "HWC".
         """
         ...
 
-    def __call__(self, frame_range: Union[Tuple[int, int], List[int]]) -> 'VideoReader':
+    def __call__(self, frame_range: Union[Tuple[int, int], Tuple[float, float],
+                                          List[int], List[float]]) -> 'VideoReader':
         """
         Set the frame range for the video reader.
 
-        Allows you to specify a range of frames to read from the video.
+        This method allows setting a **range** using **frame indices (int)** or **timestamps (float)**.
 
-        Example:
-            with VideoReader('input.mp4')([10, 20]) as reader:
-                for frame in reader:
-                    print(f"Processing {frame}")
+        **Example:**
+        ```python
+        with VideoReader('input.mp4')([10, 20]) as reader:  # Using frames
+            for frame in reader:
+                process_frame(frame)
+
+        with VideoReader('input.mp4')([1.5, 2.5]) as reader:  # Using timestamps
+            for frame in reader:
+                process_frame(frame)
+        ```
 
         Args:
-            frame_range (Union[Tuple[int, int], List[int]]): A tuple or list containing the start and end frame indices.
+            frame_range (Union[Tuple[int, int], Tuple[float, float], List[int], List[float]]):
+                A tuple or list containing the start and end frame indices or timestamps.
 
         Returns:
             VideoReader: The video reader object itself.
 
         Raises:
-            ValueError: If `frame_range` is not a tuple or list of two integers.
+            ValueError: If `frame_range` is not a tuple or list of two **ints or two floats**.
         """
         ...
 
     def read_frame(self) -> torch.Tensor:
         """
-        Read a frame from the video.
+        Read the next frame from the video.
 
         Returns:
-            Union[torch.Tensor: The frame data, as a torch.Tensor.
+            torch.Tensor: The frame data as a PyTorch tensor.
         """
         ...
 
@@ -77,7 +86,26 @@ class VideoReader:
             timestamp (float): Timestamp in seconds.
 
         Returns:
-            bool: True if seek was successful, otherwise False.
+            bool: True if the seek was successful, otherwise False.
+        """
+        ...
+
+    def set_range(self, start: Union[int, float], end: Union[int, float]) -> None:
+        """
+        Set the playback range using either **frame numbers (int)** or **timestamps (float)**.
+
+        **Example:**
+        ```python
+        reader.set_range(10, 50)      # Frame-based range
+        reader.set_range(1.5, 2.5)    # Time-based range
+        ```
+
+        Args:
+            start (Union[int, float]): Starting frame number or timestamp.
+            end (Union[int, float]): Ending frame number or timestamp.
+
+        Raises:
+            ValueError: If `start` and `end` are not both **ints** or both **floats**.
         """
         ...
 
@@ -92,41 +120,41 @@ class VideoReader:
 
     def get_properties(self) -> dict:
         """
-        Get properties of the video.
+        Retrieve video properties.
 
         Returns:
-            A dictionary containing specific video properties.
-            Contains the following:
-            - width: Width of the video.
-            - height: Height of the video.
-            - fps: Frames per second of the video.
-            - min_fps: Minimum frames per second of the video.
-            - max_fps: Maximum frames per second of the video.
-            - duration: Duration of the video in seconds.
-            - total_frames: Total number of frames in the video.
-            - pixel_format: Pixel format of the video.
-            - has_audio: Whether the video has audio.
-            - audio_bitrate: Audio bitrate of the video.
-            - audio_channels: Number of audio channels.
-            - audio_sample_rate: Audio sample rate.
-            - audio_codec: Audio codec.
-            - bit_depth: Bit depth of the video.
-            - aspect_ratio: Aspect ratio of the video.
-            - codec: Video codec.
+            dict: A dictionary containing the following properties:
+                - width (int): Video width.
+                - height (int): Video height.
+                - fps (float): Frames per second.
+                - min_fps (float): Minimum frames per second.
+                - max_fps (float): Maximum frames per second.
+                - duration (float): Video duration in seconds.
+                - total_frames (int): Total number of frames.
+                - pixel_format (str): Video pixel format.
+                - has_audio (bool): Whether the video contains audio.
+                - audio_bitrate (Optional[int]): Audio bitrate (if applicable).
+                - audio_channels (Optional[int]): Number of audio channels.
+                - audio_sample_rate (Optional[int]): Audio sample rate.
+                - audio_codec (Optional[str]): Audio codec name.
+                - bit_depth (int): Bit depth of the video.
+                - aspect_ratio (str): Video aspect ratio.
+                - codec (str): Video codec name.
         """
         ...
+
     def __len__(self) -> int:
         """
         Get the total number of frames in the video.
 
         Returns:
-            int: Number of frames.
+            int: Number of frames in the video.
         """
         ...
 
     def __iter__(self) -> 'VideoReader':
         """
-        Get the iterator object for the video reader.
+        Get an iterator for iterating over frames.
 
         Returns:
             VideoReader: The video reader object itself.
@@ -135,13 +163,13 @@ class VideoReader:
 
     def __next__(self) -> torch.Tensor:
         """
-        Get the next frame in the video.
+        Retrieve the next frame in the video.
 
         Returns:
-          torch.Tensor: The next frame as a torch.Tensor.
-        
+            torch.Tensor: The next frame as a PyTorch tensor.
+
         Raises:
-            StopIteration: When no more frames are available.
+            StopIteration: Raised when no more frames are available.
         """
         ...
 
@@ -168,10 +196,21 @@ class VideoReader:
         """
         ...
 
-
     def reset(self) -> None:
         """
         Reset the video reader to the beginning of the video.
+        """
+        ...
+
+    def __getitem__(self, key: str) -> Any:
+        """
+        Retrieve a specific property of the video.
+
+        Args:
+            key (str): Property name.
+
+        Returns:
+            Any: The value of the requested property.
         """
         ...
 

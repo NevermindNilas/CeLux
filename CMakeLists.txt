@@ -7,14 +7,25 @@ cmake_minimum_required(VERSION 3.15)
 # Option to enable or disable CUDA support
 option(ENABLE_CUDA "Enable CUDA support" ON)
 
+# Enable response files for CUDA on Windows to handle long argument lists
+if(ENABLE_CUDA)
+    # The following lines help keep 'nvcc' command lines from overflowing
+    set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_OBJECTS ON)
+    set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_INCLUDES ON)
+    set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_LIBRARIES ON)
+endif()
 # Use vcpkg toolchain
-if (WIN32)
-    # Windows-specific vcpkg toolchain
-    set(CMAKE_TOOLCHAIN_FILE "C:/Users/tjerf/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
+if(WIN32)
+    set(CMAKE_TOOLCHAIN_FILE
+        "D:/dev/C++/Dependency_Managers/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "Vcpkg toolchain file"
+    )
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
-    # Linux-specific vcpkg toolchain
-    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+    set(CMAKE_TOOLCHAIN_FILE
+        "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING ""
+    )
 endif()
 
 # Conditionally include CUDA in the project languages
@@ -35,6 +46,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(ENABLE_CUDA)
     if(WIN32)
         # Windows-specific CUDA paths
+        # NOTE: If you actually want CUDA 12.2, change v12.1 to v12.2 here
         set(CUDA_TOOLKIT_ROOT_DIR "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1")
         include_directories("${CUDA_TOOLKIT_ROOT_DIR}/include")
         link_directories("${CUDA_TOOLKIT_ROOT_DIR}/lib/x64")
@@ -54,7 +66,7 @@ endif()
 
 if(WIN32)
     # Windows-specific FFmpeg paths
-    set(FFMPEG_VCPKG_STATIC_DIR "C:/Users/tjerf/vcpkg/installed/x64-windows-static")
+    set(FFMPEG_VCPKG_STATIC_DIR "D:/dev/C++/Dependency_Managers/vcpkg/installed/x64-windows-static")
     set(FFMPEG_LIB_EXT ".lib")
 else()
     # Linux-specific FFmpeg paths
@@ -72,7 +84,7 @@ set(FFMPEG_DEPENDENCIES
     "${FFMPEG_VCPKG_STATIC_DIR}/lib/libwebpdemux${FFMPEG_LIB_EXT}"
     "${FFMPEG_VCPKG_STATIC_DIR}/lib/libwebpmux${FFMPEG_LIB_EXT}"
     "${FFMPEG_VCPKG_STATIC_DIR}/lib/libx264${FFMPEG_LIB_EXT}"
-	"${FFMPEG_VCPKG_STATIC_DIR}/lib/x265-static${FFMPEG_LIB_EXT}"
+    "${FFMPEG_VCPKG_STATIC_DIR}/lib/x265-static${FFMPEG_LIB_EXT}"
     "${FFMPEG_VCPKG_STATIC_DIR}/lib/libsharpyuv${FFMPEG_LIB_EXT}"
 )
 
@@ -94,9 +106,9 @@ set(FFMPEG_STATIC_LIBS
 
 if(WIN32)
     if(ENABLE_CUDA)
-        set(TORCH_INSTALL_PREFIX "C:/Users/tjerf/Downloads/libtorch-win-shared-with-deps-2.4.0+cu121/libtorch")
+        set(TORCH_INSTALL_PREFIX "D:/dev/C++/Libraries/libtorch-cuda/libtorch")
     else()
-        set(TORCH_INSTALL_PREFIX "C:/Users/tjerf/Downloads/libtorch-win-shared-with-deps-2.4.0+cpu/libtorch")
+        set(TORCH_INSTALL_PREFIX "D:/dev/C++/Libraries/libtorch-cpu/libtorch")
     endif()
 else()
     if(ENABLE_CUDA)
@@ -168,6 +180,9 @@ endif()
 # ------------------------------
 # 7. Find pybind11 using vcpkg
 # ------------------------------
+set(pybind11_DIR "D:/dev/C++/Dependency_Managers/vcpkg/installed/x64-windows-static/share/pybind11")
+set(spdlog_DIR "D:/dev/C++/Dependency_Managers/vcpkg/installed/x64-windows-static/share/spdlog")
+set(fmt_DIR    "D:/dev/C++/Dependency_Managers/vcpkg/installed/x64-windows-static/share/fmt")
 
 find_package(pybind11 REQUIRED)
 
@@ -209,8 +224,8 @@ file(GLOB_RECURSE SOURCES_COMMON
 )
 
 if(ENABLE_CUDA)
+    # Gather .cu files separately
     file(GLOB_RECURSE SOURCES_CUDA
-        "src/CeLux/conversion/gpu/cuda*.cpp"
         "src/CeLux/cuda/*.cu"
     )
     set(SOURCES ${SOURCES_COMMON} ${SOURCES_CUDA})
@@ -218,12 +233,21 @@ else()
     set(SOURCES ${SOURCES_COMMON})
 endif()
 
+# Create the main CeLuxLib static library
 add_library(CeLuxLib STATIC ${SOURCES})
 
+# If CUDA is enabled, define a macro and set CUDA properties
 if(ENABLE_CUDA)
     target_compile_definitions(CeLuxLib PUBLIC CUDA_ENABLED)
+
+    set_target_properties(CeLuxLib PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+        CUDA_SEPARABLE_COMPILATION ON
+    )
 endif()
 
+# We need spdlog and fmt
 find_package(spdlog CONFIG REQUIRED)
 message(STATUS "spdlog found: ${spdlog_VERSION}")
 
@@ -253,16 +277,9 @@ endif()
 
 set_target_properties(CeLuxLib PROPERTIES
     CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON
 )
-
-if(ENABLE_CUDA)
-    set_target_properties(CeLuxLib PROPERTIES
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED ON
-        CUDA_SEPARABLE_COMPILATION ON
-    )
-endif()
 
 # ------------------------------
 # 10. Link Libraries
@@ -288,7 +305,7 @@ else()
         ${FFMPEG_STATIC_LIBS}
         ${TORCH_LIBRARIES}
         spdlog::spdlog_header_only
-        fmt::fmt-header-only
+        fmt::fmt-header_only
         pthread
         dl
     )
@@ -314,7 +331,7 @@ endif()
 # 11. Build the Python Module
 # ------------------------------
 
-add_library(celux MODULE  ${CMAKE_SOURCE_DIR}/src/CeLux/Python/Bindings.cpp)
+add_library(celux MODULE ${CMAKE_SOURCE_DIR}/src/CeLux/Python/Bindings.cpp)
 
 # Compiler optimizations
 if(WIN32)
@@ -325,7 +342,18 @@ endif()
 
 if(ENABLE_CUDA)
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 -use_fast_math")
+    # Turn off object-level PDB generation on CUDA files
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=\"/Z7\"")
 endif()
+
+
+# Enable verbose build output
+set(CMAKE_VERBOSE_MAKEFILE ON)
+# Enable Ninja verbose output
+add_compile_options(-v)
+# Add verbose flag to CUDA compiler
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -v")
+
 
 target_include_directories(celux PUBLIC
     ${CMAKE_SOURCE_DIR}/include/CeLux
@@ -346,7 +374,7 @@ target_include_directories(celux PUBLIC
     ${fmt_INCLUDE_DIRS}
 )
 
-# Set module suffix
+# Set module suffix for Python library
 if(WIN32)
     set(MODULE_SUFFIX ".pyd")
 else()
@@ -413,6 +441,9 @@ endif()
 # 12. Optional: Clean Up Other Output Directories
 # ------------------------------
 
+# Example: unify library outputs for CeLuxLib
 set_target_properties(CeLuxLib PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${ARCHIVE_OUTPUT_DIRECTORY}"
 )
+
+message(STATUS "CMake configuration complete. Building with CUDA = ${ENABLE_CUDA}.")

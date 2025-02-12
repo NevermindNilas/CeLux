@@ -34,27 +34,14 @@ class Factory
      * @param converter Unique pointer to the IConverter instance.
      * @return std::unique_ptr<Decoder> Pointer to the created Decoder.
      */
-    static std::unique_ptr<Decoder> createDecoder(torch::Device device, const std::string& filename, int numThreads,
+    static std::shared_ptr<Decoder>
+    createDecoder(torch::Device device, const std::string& filename, int numThreads,
                   std::vector<std::shared_ptr<FilterBase>> filters)
     {
-        if (device.is_cpu())
-        {
-            return std::make_unique<celux::backends::cpu::Decoder>(filename, numThreads,
-                                                                   filters);
-        }
-#ifdef CUDA_ENABLED
-        else if (device.is_cuda())
-        {
-            return std::make_unique<celux::backends::gpu::cuda::Decoder>(
-                filename, numThreads, filters);
-        }
-#endif // CUDA_ENABLED
-        else
-        {
-            throw std::invalid_argument("Unsupported backend: " + device.str());
-        }
-    }
 
+        return std::make_shared<celux::backends::cpu::Decoder>(filename, numThreads,
+                                                               filters);
+    }
 
     /**
      * @brief Creates a Converter instance based on the specified backend and pixel
@@ -81,13 +68,14 @@ class Factory
         // Define the key based on device and pixel format
         ConverterKey key = std::make_tuple(is_cpu, pixfmt);
 
-        // Define the factory map
+        // Define the factory map (CPU only in this example)
         static const std::unordered_map<ConverterKey,
-                                        std::function<std::unique_ptr<IConverter>(
-                                            )>,
+                                        std::function<std::unique_ptr<IConverter>()>,
                                         ConverterKeyHash>
             converterMap = {
-                // CPU converters
+                // -------------------------------------------------------
+                // Existing CPU converters
+                // -------------------------------------------------------
                 {std::make_tuple(true, AV_PIX_FMT_YUV420P),
                  []() -> std::unique_ptr<IConverter>
                  {
@@ -101,6 +89,12 @@ class Factory
                      CELUX_DEBUG("Creating YUV420P10LEToRGB48 converter");
                      return std::make_unique<cpu::YUV420P10ToRGB48>();
                  }},
+                {std::make_tuple(true, AV_PIX_FMT_YUV422P10LE),
+                 []() -> std::unique_ptr<IConverter>
+                 {
+                     CELUX_DEBUG("Creating YUV422P10LEToRGB48 converter");
+                     return std::make_unique<cpu::YUV422P10ToRGB48>();
+                 }},
 
                 // bgr24
                 {std::make_tuple(true, AV_PIX_FMT_BGR24),
@@ -109,14 +103,14 @@ class Factory
                      CELUX_DEBUG("Creating BGR24ToRGB converter");
                      return std::make_unique<cpu::BGRToRGB>();
                  }},
-                //rgb24
+                // rgb24
                 {std::make_tuple(true, AV_PIX_FMT_RGB24),
-                         []() -> std::unique_ptr<IConverter>
-                         {
-					 CELUX_DEBUG("Creating RGB24ToRGB converter");
-					 return std::make_unique<cpu::RGBToRGB>();
-				 }},
-                // New CPU converters with alpha channels
+                 []() -> std::unique_ptr<IConverter>
+                 {
+                     CELUX_DEBUG("Creating RGB24ToRGB converter");
+                     return std::make_unique<cpu::RGBToRGB>();
+                 }},
+                // RGBA, BGRA, GBRP, etc.
                 {std::make_tuple(true, AV_PIX_FMT_RGBA),
                  []() -> std::unique_ptr<IConverter>
                  {
@@ -129,43 +123,82 @@ class Factory
                      CELUX_DEBUG("Creating BGRAToRGB converter");
                      return std::make_unique<cpu::BGRAToRGB>();
                  }},
-
-#ifdef CUDA_ENABLED
-                // CUDA converters
-                {std::make_tuple(false, AV_PIX_FMT_NV12),
-                 []( )
-                     -> std::unique_ptr<IConverter>
+                {std::make_tuple(true, AV_PIX_FMT_GBRP),
+                 []() -> std::unique_ptr<IConverter>
                  {
-                     CELUX_DEBUG("Creating NV12ToRGB converter");
-                     return std::make_unique<gpu::cuda::NV12ToRGB>();
+                     CELUX_DEBUG("Creating GBRPToRGB converter");
+                     return std::make_unique<cpu::GBRPToRGB>();
                  }},
 
-                {std::make_tuple(false, AV_PIX_FMT_P010LE),
-                 []( )
-                     -> std::unique_ptr<IConverter>
+                // 8-bit YUV422
+                {std::make_tuple(true, AV_PIX_FMT_YUV422P),
+                 []() -> std::unique_ptr<IConverter>
                  {
-                     CELUX_DEBUG("Creating P010LEToRGB48LE converter");
-                     // Uncomment and implement the converter when ready
-                     return std::make_unique<gpu::cuda::P010LEToRGB>(
-                         );
+                     CELUX_DEBUG("Creating YUV422P8ToRGB24 converter");
+                     return std::make_unique<cpu::YUV422P8ToRGB24>();
                  }},
 
-#endif
+                // 8-bit YUV444
+                {std::make_tuple(true, AV_PIX_FMT_YUV444P),
+                 []() -> std::unique_ptr<IConverter>
+                 {
+                     CELUX_DEBUG("Creating YUV444P8ToRGB24 converter");
+                     return std::make_unique<cpu::YUV444P8ToRGB24>();
+                 }},
+
+                // -------------------------------------------------------
+                // NEW ENTRIES FOR 10/12-BIT and PRORES4444
+                // -------------------------------------------------------
+
+                // 10-bit YUV444
+                {std::make_tuple(true, AV_PIX_FMT_YUV444P10LE),
+                 []() -> std::unique_ptr<IConverter>
+                 {
+                     CELUX_DEBUG("Creating YUV444P10LEToRGB48 converter");
+                     return std::make_unique<cpu::YUV444P10ToRGB48>();
+                 }},
+
+                // 12-bit YUV420
+                {std::make_tuple(true, AV_PIX_FMT_YUV420P12LE),
+                 []() -> std::unique_ptr<IConverter>
+                 {
+                     CELUX_DEBUG("Creating YUV420P12ToRGB48 converter");
+                     return std::make_unique<cpu::YUV420P12ToRGB48>();
+                 }},
+
+                // 12-bit YUV422
+                {std::make_tuple(true, AV_PIX_FMT_YUV422P12LE),
+                 []() -> std::unique_ptr<IConverter>
+                 {
+                     CELUX_DEBUG("Creating YUV422P12ToRGB48 converter");
+                     return std::make_unique<cpu::YUV422P12ToRGB48>();
+                 }},
+
+                // 12-bit YUV444
+                {std::make_tuple(true, AV_PIX_FMT_YUV444P12LE),
+                 []() -> std::unique_ptr<IConverter>
+                 {
+                     CELUX_DEBUG("Creating YUV444P12ToRGB48 converter");
+                     return std::make_unique<cpu::YUV444P12ToRGB48>();
+                 }},
+
+             
             };
 
-        // Search for the converter in the map
+        // Look up the converter in the map
         auto it = converterMap.find(key);
         if (it != converterMap.end())
         {
             return it->second();
         }
 
-        // If not found, throw an exception with detailed information
+        // If no match, throw
         std::string deviceType = is_cpu ? "CPU" : (is_cuda ? "CUDA" : "Unknown");
         throw std::invalid_argument("Unsupported combination - Device: " + deviceType +
                                     ", Bit Depth: " + std::to_string(bit_depth) +
                                     ", Pixel Format: " + av_get_pix_fmt_name(pixfmt));
     }
+
 
   private:
     // Helper function to infer bit depth from AVPixelFormat
@@ -173,18 +206,57 @@ class Factory
     {
         switch (pixfmt)
         {
+        // Already existing 8-bit formats
         case AV_PIX_FMT_YUV420P:
         case AV_PIX_FMT_RGB24:
         case AV_PIX_FMT_NV12:
         case AV_PIX_FMT_BGR24:
         case AV_PIX_FMT_RGBA:
         case AV_PIX_FMT_BGRA:
+        case AV_PIX_FMT_GBRP:
             return 8;
+
+        // Already existing 10-bit formats
         case AV_PIX_FMT_YUV420P10LE:
+        case AV_PIX_FMT_YUV422P10LE:
         case AV_PIX_FMT_P010LE:
         case AV_PIX_FMT_RGB48LE:
             return 10;
-        // Add more cases as needed
+
+        // ------------------------
+        // NEW ENTRIES (one by one)
+        // ------------------------
+        // 8-bit planar 4:2:2
+        case AV_PIX_FMT_YUV422P:
+            return 8;
+
+        // 8-bit planar 4:4:4
+        case AV_PIX_FMT_YUV444P:
+            return 8;
+
+        // 10-bit planar 4:4:4
+        case AV_PIX_FMT_YUV444P10LE:
+            return 10;
+
+        // 12-bit planar 4:2:0
+        case AV_PIX_FMT_YUV420P12LE:
+            return 12;
+
+        // 12-bit planar 4:2:2
+        case AV_PIX_FMT_YUV422P12LE:
+            return 12;
+
+        // 12-bit planar 4:4:4
+        case AV_PIX_FMT_YUV444P12LE:
+            return 12;
+
+        // ProRes4444 often decodes to YUVA444P10 or YUVA444P16.
+        case AV_PIX_FMT_YUVA444P10LE:
+            return 10;
+        // Or if you also want to handle 12-bit alpha:
+        case AV_PIX_FMT_YUVA444P12LE:
+            return 12;
+
         default:
             throw std::invalid_argument(
                 std::string("Unknown pixel format for bit depth inference: ") +

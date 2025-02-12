@@ -13,6 +13,10 @@
 
 The name **CeLux** is derived from the Latin words `celer` (speed) and `lux` (light), reflecting its commitment to speed and efficiency.
 
+# [Check out the latest changes](docs/CHANGELOG.md#version-060)
+  - **CeLux** now has basic audio support!
+    - Decode into tensor, or directly into file.
+    
 ## 📚 Documentation
 
 - [📝 Changelog](docs/CHANGELOG.md)
@@ -28,7 +32,6 @@ The name **CeLux** is derived from the Latin words `celer` (speed) and `lux` (li
 
 - **⚡ Ultra-Fast Video Decoding:** Achieve lightning-fast decode times for full HD videos using hardware acceleration.
 - **🔗 Direct Decoding to Tensors:** Decode video frames directly into PyTorch tensors for immediate processing.
-- **🖥️ Hardware Acceleration Support:** Utilize CUDA for GPU-accelerated decoding, significantly improving performance.
 - **🔄 Easy Integration:** Seamlessly integrates with existing Python workflows, making it easy to incorporate into your projects.
 
 ## ⚡ Quick Start
@@ -36,17 +39,15 @@ The name **CeLux** is derived from the Latin words `celer` (speed) and `lux` (li
 ```sh
 pip install celux  # cpu only version
 ```
-```sh
-pip install celux-cuda  # cuda+cpu
-```
+
 ```py
 from celux import VideoReader, Scale
 #import celux as cx
 filters = [Scale(width = 1920, height = 1080)]
 reader = VideoReader("/path/to/video.ext",
                     #num_threads: int = os.cpu_count(),
-                    device = "cuda",
-                    filters = filters
+                    filters = filters,
+                    #tensor_shape: str = 'HWC'
                     )
 for frame in reader:
 # do something
@@ -59,7 +60,6 @@ for frame in reader:
 | Library  | Device       | Frames per Second (FPS) |
 |----------|--------------|-------------------------|
 | Celux | CPU      | 1520.75                 |
-| Celux | CUDA      | 1710.85                |
 | PyAV | CPU      | 350.58                |
 | OpenCV | CPU      | 454.44                 |
 

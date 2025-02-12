@@ -3,10 +3,9 @@
  
 ### 🤖 PIP installation
 
-**CeLux** offers two installation options tailored to your system's capabilities:
+**CeLux** offers one installation options tailored to your system's capabilities:
 
 1. **CPU-Only Version:** For systems without CUDA-capable GPUs.
-2. **CUDA (GPU) Version:** For systems with NVIDIA GPUs supporting CUDA.
 
 ### 🖥️ CPU-Only Installation
 
@@ -16,27 +15,9 @@ Install the CPU version of **CeLux** using `pip`:
 pip install celux
 ```
 
-**Note:** The CPU version **only** supports CPU operations. Attempting to use GPU features with this version will result in an error.
-
-### 🖥️ CUDA (GPU) Installation
-
-Install the CUDA version of **CeLux** using `pip`:
-
-```bash
-pip install celux-cuda
-```
-
-**Note:** The CUDA version **requires** a CUDA-capable GPU and the corresponding Torch-Cuda installation.
-
-### 🔄 Both Packages Import as `celux`
-
-Regardless of the installation choice, both packages are imported using the same module name:
-
 ```python
 import celux #as cx
 ```
-
-This design ensures a seamless transition between CPU and CUDA versions without changing your import statements.
 
 ## 🛠️ Building from Source
 

@@ -183,6 +183,43 @@ class Frame
      */
     void fillData(uint8_t* data, int size, int plane = 0);
 
+     /**
+     * @brief Get the underlying FFmpeg color space (e.g. AVCOL_SPC_BT709, etc.).
+     *
+     * If the colorspace is `AVCOL_SPC_UNSPECIFIED`, you might guess one
+     * based on resolution or other heuristics.
+     *
+     * @return AVColorSpace enumeration value.
+     */
+    AVColorSpace getColorSpace() const;
+
+    /**
+     * @brief Get the underlying FFmpeg color range (e.g. AVCOL_RANGE_MPEG,
+     * AVCOL_RANGE_JPEG).
+     *
+     * If the color_range is `AVCOL_RANGE_UNSPECIFIED`, you might guess
+     * it is limited or full range. By default, many decoders set `AVCOL_RANGE_MPEG` for
+     * 16–235.
+     *
+     * @return AVColorRange enumeration value.
+     */
+    AVColorRange getColorRange() const;
+
+    // Optionally, a helper struct if you want everything in one place:
+    struct ColorInfo
+    {
+        AVColorSpace space;
+        AVColorRange range;
+        // You could add color_primaries, color_trc, etc., if needed
+    };
+
+    /**
+     * @brief Get or guess the color information for this frame.
+     *
+     * This method returns a ColorInfo struct containing color space and range.
+     */
+    ColorInfo getOrGuessColorInfo() const;
+
     /**
      * @brief Overload the << operator to print Frame information.
      *

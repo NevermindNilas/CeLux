@@ -2,11 +2,27 @@
 #include "Decoder.hpp"
 #include <Factory.hpp>
 
+
 using namespace celux::error;
 
 namespace celux
 {
-
+struct WAVHeader
+{
+    char riff[4] = {'R', 'I', 'F', 'F'};
+    uint32_t chunkSize = 0; // To be filled later
+    char wave[4] = {'W', 'A', 'V', 'E'};
+    char fmt[4] = {'f', 'm', 't', ' '};
+    uint32_t subchunk1Size = 16;
+    uint16_t audioFormat = 1; // PCM
+    uint16_t numChannels = 2;
+    uint32_t sampleRate = 44100;
+    uint32_t byteRate = 0;   // sampleRate * numChannels * bitsPerSample/8
+    uint16_t blockAlign = 0; // numChannels * bitsPerSample/8
+    uint16_t bitsPerSample = 16;
+    char data[4] = {'d', 'a', 't', 'a'};
+    uint32_t subchunk2Size = 0; // To be filled later
+};
 Decoder::Decoder(int numThreads, std::vector<std::shared_ptr<FilterBase>> filters)
     : converter(nullptr), formatCtx(nullptr), codecCtx(nullptr), pkt(nullptr),
       videoStreamIndex(-1), numThreads(numThreads), filters_(filters)
@@ -18,13 +34,14 @@ Decoder::~Decoder()
 {
     CELUX_DEBUG("BASE DECODER: Decoder destructor called");
     close();
+    closeAudio();
 }
 
 Decoder::Decoder(Decoder&& other) noexcept
     : formatCtx(std::move(other.formatCtx)), codecCtx(std::move(other.codecCtx)),
       pkt(std::move(other.pkt)), videoStreamIndex(other.videoStreamIndex),
       properties(std::move(other.properties)), frame(std::move(other.frame)),
-      converter(std::move(other.converter)), hwDeviceCtx(std::move(other.hwDeviceCtx))
+      converter(std::move(other.converter))
 {
     CELUX_DEBUG("BASE DECODER: Decoder move constructor called");
     other.videoStreamIndex = -1;
@@ -45,7 +62,6 @@ Decoder& Decoder::operator=(Decoder&& other) noexcept
         properties = std::move(other.properties);
         frame = std::move(other.frame);
         converter = std::move(other.converter);
-        hwDeviceCtx = std::move(other.hwDeviceCtx);
 
         other.videoStreamIndex = -1;
         // Reset other members if necessary
@@ -82,7 +98,7 @@ void Decoder::setProperties()
     }
 
     // Set pixel format and bit depth
-    properties.pixelFormat = isHwAccel ? codecCtx->sw_pix_fmt : codecCtx->pix_fmt;
+    properties.pixelFormat = codecCtx->pix_fmt;
     properties.bitDepth = getBitDepth();
 
     // Check for audio stream
@@ -143,16 +159,12 @@ void Decoder::initialize(const std::string& filePath)
 {
     CELUX_DEBUG("BASE DECODER: Initializing decoder with file: {}", filePath);
     openFile(filePath);
-    initHWAccel(); // Initialize HW acceleration (overridden in GPU Decoder)
     findVideoStream();
     initCodecContext();
     setProperties();
 
-    converter = celux::Factory::createConverter(isHwAccel ? torch::kCUDA : torch::kCPU,
+    converter = celux::Factory::createConverter(torch::kCPU,
                                                 properties.pixelFormat);
-
-    CELUX_DEBUG("BASE DECODER: Converter initialized. HW accel is {}",
-                isHwAccel ? "enabled" : "disabled");
 
     CELUX_DEBUG("BASE DECODER: Decoder initialization completed");
 
@@ -241,14 +253,14 @@ bool Decoder::initFilterGraph()
                                    &outputs, nullptr);
     if (ret < 0)
     {
-        CELUX_ERROR("Error parsing filter graph: {}", celux::errorToString(ret));
+        CELUX_DEBUG("Error parsing filter graph: {}", celux::errorToString(ret));
         return false;
     }
 
     ret = avfilter_graph_config(filter_graph_.get(), nullptr);
     if (ret < 0)
     {
-        CELUX_ERROR("Error configuring filter graph: {}", celux::errorToString(ret));
+        CELUX_DEBUG("Error configuring filter graph: {}", celux::errorToString(ret));
         return false;
     }
 
@@ -258,7 +270,6 @@ bool Decoder::initFilterGraph()
 
     return true;
 }
-
 
 void Decoder::openFile(const std::string& filePath)
 {
@@ -281,12 +292,6 @@ void Decoder::openFile(const std::string& filePath)
     CELUX_DEBUG("BASE DECODER: Stream information retrieved successfully");
 }
 
-void Decoder::initHWAccel()
-{
-    CELUX_DEBUG("BASE DECODER: Initializing hardware acceleration");
-    // Default implementation does nothing
-}
-
 void Decoder::findVideoStream()
 {
     CELUX_DEBUG("BASE DECODER: Finding best video stream");
@@ -295,7 +300,7 @@ void Decoder::findVideoStream()
         av_find_best_stream(formatCtx.get(), AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
     if (ret < 0)
     {
-		CELUX_ERROR("No video stream found");
+		CELUX_DEBUG("No video stream found");
 		throw CxException("No video stream found");
 	}
 
@@ -312,7 +317,7 @@ void Decoder::initCodecContext()
     CELUX_DEBUG("BASE DECODER: Initializing codec context");
     if (!codec)
     {
-        CELUX_ERROR("Unsupported codec!");
+        CELUX_DEBUG("Unsupported codec!");
         throw CxException("Unsupported codec!");
     }
 
@@ -320,7 +325,7 @@ void Decoder::initCodecContext()
     AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
     if (!codec_ctx)
     {
-        CELUX_ERROR("Could not allocate codec context");
+        CELUX_DEBUG("Could not allocate codec context");
         throw CxException("Could not allocate codec context");
     }
     codecCtx.reset(codec_ctx);
@@ -333,17 +338,6 @@ void Decoder::initCodecContext()
                  std::string("Failed to copy codec parameters:"));
 
     CELUX_DEBUG("BASE DECODER: Codec parameters copied to codec context");
-    // Set hardware device context if available
-    if (hwDeviceCtx)
-    {
-        codecCtx->hw_device_ctx = av_buffer_ref(hwDeviceCtx.get());
-        if (!codecCtx->hw_device_ctx)
-        {
-            CELUX_ERROR("Failed to reference HW device context");
-            throw CxException("Failed to reference HW device context");
-        }
-        CELUX_DEBUG("BASE DECODER: Hardware device context set");
-    }
 
     codecCtx->thread_count = numThreads;
     codecCtx->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
@@ -356,45 +350,6 @@ void Decoder::initCodecContext()
                  std::string("Failed to open codec:"));
 
     CELUX_DEBUG("BASE DECODER: Codec opened successfully");
-    if (isHwAccel)
-    {
-        // Initialize hardware frames context
-        AVBufferRef* hw_frames_ref = av_hwframe_ctx_alloc(hwDeviceCtx.get());
-        if (!hw_frames_ref)
-        {
-            CELUX_ERROR("Failed to allocate hardware frames context");
-            throw CxException("Failed to allocate hardware frames context");
-        }
-        codecCtx->pix_fmt = AV_PIX_FMT_CUDA;
-        set_sw_pix_fmt(codecCtx, getBitDepth());
-        AVHWFramesContext* frames_ctx = (AVHWFramesContext*)(hw_frames_ref->data);
-        frames_ctx->format = codecCtx->pix_fmt;    // AV_PIX_FMT_CUDA
-        frames_ctx->sw_format = codecCtx->sw_pix_fmt; // e.g., AV_PIX_FMT_NV12
-        frames_ctx->width = codecCtx->width;
-        frames_ctx->height = codecCtx->height;
-        frames_ctx->initial_pool_size = 32; // Adjust as needed
-
-        int ret = av_hwframe_ctx_init(hw_frames_ref);
-        if (ret < 0)
-        {
-            CELUX_ERROR("Failed to initialize hardware frames context");
-            av_buffer_unref(&hw_frames_ref);
-            throw CxException("Failed to initialize hardware frames context");
-        }
-
-        // Assign the hardware frames context to the codec context
-        codecCtx->hw_frames_ctx = av_buffer_ref(hw_frames_ref);
-        if (!codecCtx->hw_frames_ctx)
-        {
-            CELUX_ERROR("Failed to set hardware frames context in codec context");
-            av_buffer_unref(&hw_frames_ref);
-            throw CxException("Failed to set hardware frames context in codec context");
-        }
-
-        hwFramesCtx.reset(hw_frames_ref);
-        frame = Frame(hwFramesCtx.get());
-        CELUX_DEBUG("Hardware frames context initialized and set in codec context");
-    }
 }
 
 // Decoder.cpp
@@ -406,7 +361,7 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
 
     if (buffer == nullptr)
     {
-        CELUX_ERROR("Buffer is null");
+        CELUX_DEBUG("Buffer is null");
         throw CxException("Buffer is null");
     }
 
@@ -428,7 +383,7 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
         }
         else if (ret < 0)
         {
-            CELUX_ERROR("Error during decoding");
+            CELUX_DEBUG("Error during decoding");
             throw CxException("Error during decoding");
         }
         else
@@ -442,7 +397,7 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
                 ret = av_buffersrc_add_frame(buffersrc_ctx_, frame.get());
                 if (ret < 0)
                 {
-                    CELUX_ERROR("Error while feeding the filter graph: {}",
+                    CELUX_DEBUG("Error while feeding the filter graph: {}",
                                 celux::errorToString(ret));
                     return false;
                 }
@@ -455,7 +410,7 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
                 }
                 else if (ret < 0)
                 {
-                    CELUX_ERROR("Error during filtering: {}",
+                    CELUX_DEBUG("Error during filtering: {}",
                                 celux::errorToString(ret));
                     return false;
                 }
@@ -485,7 +440,7 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
         }
         else if (ret < 0)
         {
-            CELUX_ERROR("Error reading frame");
+            CELUX_DEBUG("Error reading frame");
             throw CxException("Error reading frame");
         }
         else
@@ -507,6 +462,22 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
     }
 }
 
+bool Decoder::seekFrame(int frameIndex)
+{
+    CELUX_TRACE("Seeking to frame index: {}", frameIndex);
+
+    if (frameIndex < 0 || frameIndex > properties.totalFrames)
+    {
+        CELUX_WARN("Frame index out of bounds: {}", frameIndex);
+        return false;
+    }
+
+    int64_t target_pts = av_rescale_q(frameIndex, {1, static_cast<int>(properties.fps)},
+                                      formatCtx->streams[videoStreamIndex]->time_base);
+    return seek(target_pts * av_q2d(formatCtx->streams[videoStreamIndex]->time_base));
+}
+
+
 bool Decoder::seek(double timestamp)
 {
     CELUX_TRACE("Seeking to timestamp: {}", timestamp);
@@ -520,9 +491,10 @@ bool Decoder::seek(double timestamp)
     CELUX_DEBUG("Converted timestamp for seeking: {}", ts);
     int ret = av_seek_frame(formatCtx.get(), videoStreamIndex, ts,
                             AVSEEK_FLAG_BACKWARD);
+
     if (ret < 0)
     {
-        CELUX_ERROR("Seek failed to timestamp: {}", timestamp);
+        CELUX_DEBUG("Seek failed to timestamp: {}", timestamp);
         return false;
     }
 
@@ -560,11 +532,6 @@ void Decoder::close()
         formatCtx.reset();
         CELUX_DEBUG("BASE DECODER: Format context reset");
     }
-    if (hwDeviceCtx)
-    {
-        hwDeviceCtx.reset();
-        CELUX_DEBUG("BASE DECODER: Hardware device context reset");
-    }
     if (converter)
     {
         CELUX_DEBUG("BASE DECODER: Synchronizing converter in Decoder close");
@@ -575,6 +542,40 @@ void Decoder::close()
     properties = VideoProperties{};
     CELUX_DEBUG("BASE DECODER: Decoder closed");
 }
+
+bool Decoder::seekToPreciseTimestamp(double targetTimestamp)
+{
+    CELUX_TRACE("Seeking precisely to timestamp: {}", targetTimestamp);
+
+    // Step 1: Seek to the nearest keyframe
+    if (!seekToNearestKeyframe(targetTimestamp))
+    {
+        CELUX_DEBUG("Failed to seek to nearest keyframe for timestamp: {}",
+                    targetTimestamp);
+        return false;
+    }
+
+    // Step 2: Decode frames until reaching the target timestamp
+    double currentTimestamp = 0.0;
+    void* buffer = nullptr; // Allocate or provide a valid buffer
+    while (true)
+    {
+        if (!decodeNextFrame(buffer, &currentTimestamp))
+        {
+            CELUX_WARN("Failed to decode frame during precise seeking");
+            return false;
+        }
+
+        if (currentTimestamp >= targetTimestamp)
+        {
+            CELUX_INFO("Reached target timestamp: {}", currentTimestamp);
+            break;
+        }
+    }
+
+    return true;
+}
+
 
 std::vector<std::string> Decoder::listSupportedDecoders() const
 {
@@ -632,34 +633,6 @@ int Decoder::getBitDepth() const
     return bitDepth;
 }
 
-void Decoder::set_sw_pix_fmt(AVCodecContextPtr& codecCtx, int bitDepth)
-{
-    if (isHwAccel)
-    {
-
-        CELUX_TRACE("Setting software pixel format");
-        if (bitDepth == 8)
-        {
-            codecCtx->sw_pix_fmt = AV_PIX_FMT_NV12;
-        }
-        else if (bitDepth == 10)
-        {
-            codecCtx->sw_pix_fmt = AV_PIX_FMT_P010LE;
-        }
-        else
-        {
-            CELUX_WARN("Unsupported bit depth, defaulting to 8-bit");
-            codecCtx->sw_pix_fmt = AV_PIX_FMT_NV12;
-        }
-        CELUX_TRACE("Software pixel format set: {}",
-                    av_get_pix_fmt_name(codecCtx->sw_pix_fmt));
-    }
-    else
-    {
-        CELUX_TRACE("Using CPU. Software pixel format will be set by Decoder");
-    }
-}
-
 bool Decoder::seekToNearestKeyframe(double timestamp)
 {
     CELUX_TRACE("Seeking to the nearest keyframe for timestamp: {}", timestamp);
@@ -677,7 +650,7 @@ bool Decoder::seekToNearestKeyframe(double timestamp)
         av_seek_frame(formatCtx.get(), videoStreamIndex, ts, AVSEEK_FLAG_BACKWARD);
     if (ret < 0)
     {
-        CELUX_ERROR("Keyframe seek failed for timestamp: {}", timestamp);
+        CELUX_DEBUG("Keyframe seek failed for timestamp: {}", timestamp);
         return false;
     }
 
@@ -731,7 +704,473 @@ double Decoder::getFrameTimestamp(AVFrame* frame)
     CELUX_WARN("Frame has no valid timestamp. Returning -1.0");
     return -1.0;
 }
+bool Decoder::initializeAudio()
+{
+    try
+    {
+        if (!properties.hasAudio)
+        {
+            CELUX_DEBUG("No audio stream available to initialize.");
+            return false;
+        }
 
+        CELUX_DEBUG("Initializing audio decoding.");
+
+        // Find the audio stream index if not already set
+        if (audioStreamIndex == -1)
+        {
+            CELUX_DEBUG("Finding audio stream index.");
+            for (unsigned int i = 0; i < formatCtx->nb_streams; ++i)
+            {
+                if (formatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+                {
+                    audioStreamIndex = i;
+                    CELUX_DEBUG("Audio stream found at index: {}", audioStreamIndex);
+                    break;
+                }
+            }
+
+            if (audioStreamIndex == -1)
+            {
+                CELUX_DEBUG("Audio stream not found.");
+                return false;
+            }
+        }
+        CELUX_DEBUG("Audio stream index: {}", audioStreamIndex);
+
+        AVCodecParameters* codecPar = formatCtx->streams[audioStreamIndex]->codecpar;
+        const AVCodec* codec = avcodec_find_decoder(codecPar->codec_id);
+        if (!codec)
+        {
+            CELUX_DEBUG("Unsupported audio codec!");
+            return false;
+        }
+
+        // Allocate audio codec context
+        AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
+        if (!codec_ctx)
+        {
+            CELUX_DEBUG("Could not allocate audio codec context.");
+            return false;
+        }
+        audioCodecCtx.reset(codec_ctx); // Assign to smart pointer
+
+        // Copy codec parameters from input stream to codec context
+        if (avcodec_parameters_to_context(audioCodecCtx.get(), codecPar) < 0)
+        {
+            CELUX_DEBUG("Failed to copy audio codec parameters to context.");
+            return false;
+        }
+
+        // Open audio codec
+        if (avcodec_open2(audioCodecCtx.get(), codec, nullptr) < 0)
+        {
+            CELUX_DEBUG("Failed to open audio codec.");
+            return false;
+        }
+
+        // Initialize channel layouts
+        AVChannelLayout in_channel_layout = audioCodecCtx->ch_layout;
+        if (in_channel_layout.nb_channels == 0)
+        {
+            // If channel layout is not set, infer from channels
+            av_channel_layout_default(&in_channel_layout,
+                                      audioCodecCtx->ch_layout.nb_channels);
+        }
+
+        AVChannelLayout out_channel_layout;
+        av_channel_layout_default(&out_channel_layout, 2); // Stereo output
+
+        AVSampleFormat out_sample_fmt =
+            AV_SAMPLE_FMT_S16; // Desired output sample format
+        int out_sample_rate = audioCodecCtx->sample_rate; // Desired output sample rate
+
+        // Allocate and set up SwrContext
+        SwrContext* swr = nullptr;
+
+        int ret = swr_alloc_set_opts2(&swr,                // Pointer to SwrContext
+                                      &out_channel_layout, // Output channel layout
+                                      out_sample_fmt,      // Output sample format
+                                      out_sample_rate,     // Output sample rate
+                                      &in_channel_layout,  // Input channel layout
+                                      audioCodecCtx->sample_fmt,  // Input sample format
+                                      audioCodecCtx->sample_rate, // Input sample rate
+                                      0,                          // Log offset
+                                      nullptr                     // Log context
+        );
+
+        if (ret < 0 || swr_init(swr) < 0)
+        {
+            CELUX_DEBUG("Failed to allocate and set SwrContext options: {}",
+                        celux::errorToString(ret));
+            swr_free(&swr);
+            return false;
+        }
+
+        swrCtx.reset(swr); // Assign to smart pointer
+        CELUX_DEBUG("SwrContext options set successfully.");
+
+        // Allocate audio frame if not already allocated
+        if (!audioFrame)
+        {
+            AVFrame* frame = av_frame_alloc();
+            if (!frame)
+            {
+                CELUX_DEBUG("Could not allocate audio frame.");
+                return false;
+            }
+            audioFrame = Frame(frame);
+        }
+
+        // Allocate audio packet if not already allocated
+        if (!audioPkt)
+        {
+            AVPacket* pkt = av_packet_alloc();
+            if (!pkt)
+            {
+                CELUX_DEBUG("Could not allocate audio packet.");
+                return false;
+            }
+            audioPkt.reset(pkt);
+        }
+
+        CELUX_DEBUG("Audio decoding initialized successfully.");
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        CELUX_DEBUG("Exception occurred during audio initialization: {}", e.what());
+        return false;
+    }
+}
+
+void Decoder::closeAudio()
+{
+    audioStreamIndex = -1;
+    CELUX_DEBUG("Audio decoding resources have been released.");
+}
+
+
+bool Decoder::extractAudioToFile(const std::string& outputFilePath)
+{
+    CELUX_DEBUG("Starting audio extraction to file: {}", outputFilePath);
+
+    if (!properties.hasAudio)
+    {
+        CELUX_DEBUG("No audio stream available to extract.");
+        return false;
+    }
+
+    if (!initializeAudio())
+    {
+        CELUX_DEBUG("Failed to initialize audio decoding.");
+        return false;
+    }
+    // Reset the decoding process before extracting audio
+    if (av_seek_frame(formatCtx.get(), audioStreamIndex, 0, AVSEEK_FLAG_BACKWARD) < 0)
+    {
+        CELUX_DEBUG("Failed to seek audio stream to beginning.");
+        return false;
+    }
+    avcodec_flush_buffers(audioCodecCtx.get());
+
+    // Open output file in binary write mode
+    FILE* outFile = fopen(outputFilePath.c_str(), "wb");
+    if (!outFile)
+    {
+        CELUX_DEBUG("Failed to open output file: {}", outputFilePath);
+
+        return false;
+    }
+
+    // Prepare WAV header with placeholders
+    WAVHeader wavHeader;
+    wavHeader.numChannels = audioCodecCtx->ch_layout.nb_channels;
+    wavHeader.sampleRate = audioCodecCtx->sample_rate;
+    wavHeader.bitsPerSample = 16; // We are converting to S16
+    wavHeader.byteRate =
+        wavHeader.sampleRate * wavHeader.numChannels * (wavHeader.bitsPerSample / 8);
+    wavHeader.blockAlign = wavHeader.numChannels * (wavHeader.bitsPerSample / 8);
+
+    // Write placeholder header
+    fwrite(&wavHeader, sizeof(WAVHeader), 1, outFile);
+
+    uint32_t dataSize = 0;
+
+    // Read and decode audio packets
+    while (av_read_frame(formatCtx.get(), audioPkt.get()) >= 0)
+    {
+        if (audioPkt->stream_index != audioStreamIndex)
+        {
+            av_packet_unref(audioPkt.get());
+            continue;
+        }
+
+        // Send packet to decoder
+        if (avcodec_send_packet(audioCodecCtx.get(), audioPkt.get()) < 0)
+        {
+            CELUX_DEBUG("Failed to send audio packet for decoding.");
+            fclose(outFile);
+ 
+            return false;
+        }
+
+        av_packet_unref(audioPkt.get());
+
+        // Receive all available frames
+        while (avcodec_receive_frame(audioCodecCtx.get(), audioFrame.get()) >= 0)
+        {
+            // Allocate buffer for converted samples
+            int dstNbSamples = swr_get_delay(swrCtx.get(), audioCodecCtx->sample_rate) +
+                               audioFrame.get()->nb_samples;
+            dstNbSamples = swr_convert(swrCtx.get(), nullptr, 0, nullptr, 0);
+            if (dstNbSamples < 0)
+            {
+                CELUX_DEBUG("Error calculating destination samples: {}",
+                            celux::errorToString(dstNbSamples));
+                fclose(outFile);
+  
+                return false;
+            }
+
+            // Allocate buffer for converted samples
+            int bufferSize = av_samples_get_buffer_size(
+                nullptr, audioCodecCtx->ch_layout.nb_channels, audioFrame.get()->nb_samples,
+                AV_SAMPLE_FMT_S16, 1);
+            if (bufferSize < 0)
+            {
+                CELUX_DEBUG("Failed to calculate buffer size for audio samples.");
+                fclose(outFile);
+
+                return false;
+            }
+
+            std::vector<uint8_t> buffer(bufferSize);
+            // Prepare buffer pointers for swr_convert
+            uint8_t* out_buffers[] = {buffer.data()};
+            // Convert samples to S16
+            int convertedSamples = swr_convert(
+                swrCtx.get(), out_buffers, audioFrame.get()->nb_samples,
+                (const uint8_t**)audioFrame.get()->data, audioFrame.get()->nb_samples);
+
+            if (convertedSamples < 0)
+            {
+                CELUX_DEBUG("Failed to convert audio samples.");
+                fclose(outFile);
+   
+                return false;
+            }
+
+            // Write PCM data to file
+            fwrite(buffer.data(), 1, bufferSize, outFile);
+            dataSize += bufferSize;
+        }
+    }
+
+    // Flush decoder
+    avcodec_send_packet(audioCodecCtx.get(), nullptr);
+    while (avcodec_receive_frame(audioCodecCtx.get(), audioFrame.get()) >= 0)
+    {
+        // Allocate buffer for converted samples
+        int dstNbSamples = swr_get_delay(swrCtx.get(), audioCodecCtx->sample_rate) +
+                           audioFrame.get()->nb_samples;
+        dstNbSamples = swr_convert(swrCtx.get(), nullptr, 0, nullptr, 0);
+        if (dstNbSamples < 0)
+        {
+            CELUX_DEBUG("Error calculating destination samples during flush: {}",
+                        celux::errorToString(dstNbSamples));
+            fclose(outFile);
+
+            return false;
+        }
+
+        int bufferSize =
+            av_samples_get_buffer_size(nullptr, audioCodecCtx->ch_layout.nb_channels,
+                                                    audioFrame.get()->nb_samples,
+                                                    AV_SAMPLE_FMT_S16, 1);
+        if (bufferSize < 0)
+        {
+            CELUX_DEBUG(
+                "Failed to calculate buffer size for audio samples during flush.");
+            fclose(outFile);
+
+            return false;
+        }
+
+        std::vector<uint8_t> buffer(bufferSize);
+        uint8_t* out_buffers[] = {buffer.data()};
+        // Convert samples to S16
+        int convertedSamples =
+            swr_convert(swrCtx.get(), out_buffers, audioFrame.get()->nb_samples,
+            (const uint8_t**)audioFrame.get()->data, audioFrame.get()->nb_samples);
+
+        if (convertedSamples < 0)
+        {
+            CELUX_DEBUG("Failed to convert audio samples during flush.");
+            fclose(outFile);
+
+            return false;
+        }
+
+        // Write PCM data to file
+        fwrite(buffer.data(), 1, bufferSize, outFile);
+        dataSize += bufferSize;
+    }
+
+    // Update WAV header with actual sizes
+    wavHeader.chunkSize = 36 + dataSize;
+    wavHeader.subchunk2Size = dataSize;
+
+    // Seek to the beginning and write the updated header
+    fseek(outFile, 0, SEEK_SET);
+    fwrite(&wavHeader, sizeof(WAVHeader), 1, outFile);
+
+    fclose(outFile);
+
+
+    CELUX_DEBUG("Audio extraction to file completed successfully.");
+    return true;
+}
+
+torch::Tensor Decoder::getAudioTensor()
+{
+    CELUX_DEBUG("Starting extraction of audio to torch::Tensor.");
+
+    if (!properties.hasAudio)
+    {
+        CELUX_DEBUG("No audio stream available to extract.");
+        return torch::Tensor();
+    }
+
+    if (!initializeAudio())
+    {
+        CELUX_DEBUG("Failed to initialize audio decoding.");
+        return torch::Tensor();
+    }
+
+    std::vector<int16_t> audioBuffer; // Assuming S16 format
+    // Reset the decoding process before extracting audio
+    if (av_seek_frame(formatCtx.get(), audioStreamIndex, 0, AVSEEK_FLAG_BACKWARD) < 0)
+    {
+        CELUX_DEBUG("Failed to seek audio stream to beginning.");
+        return torch::Tensor();
+    }
+    avcodec_flush_buffers(audioCodecCtx.get());
+
+    // Read and decode audio packets
+    while (av_read_frame(formatCtx.get(), audioPkt.get()) >= 0)
+    {
+        if (audioPkt->stream_index != audioStreamIndex)
+        {
+            av_packet_unref(audioPkt.get());
+            continue;
+        }
+
+        // Send packet to decoder
+        if (avcodec_send_packet(audioCodecCtx.get(), audioPkt.get()) < 0)
+        {
+            CELUX_DEBUG("Failed to send audio packet for decoding.");
+
+            return torch::Tensor();
+        }
+
+        av_packet_unref(audioPkt.get());
+
+        // Receive all available frames
+        while (avcodec_receive_frame(audioCodecCtx.get(), audioFrame.get()) >= 0)
+        {
+            // Allocate buffer for converted samples
+            int dstNbSamples = swr_get_delay(swrCtx.get(), audioCodecCtx->sample_rate) +
+                               audioFrame.get()->nb_samples;
+
+            // Allocate buffer for converted samples
+            int bufferSize = av_samples_get_buffer_size(
+                nullptr, audioCodecCtx->ch_layout.nb_channels,
+                audioFrame.get()->nb_samples,
+                AV_SAMPLE_FMT_S16, 1);
+            if (bufferSize < 0)
+            {
+                CELUX_DEBUG("Failed to calculate buffer size for audio samples.");
+
+                return torch::Tensor();
+            }
+
+            std::vector<uint8_t> buffer(bufferSize);
+            uint8_t* out_buffers[] = {buffer.data()};
+            // Convert samples to S16
+            int convertedSamples =
+                swr_convert(swrCtx.get(), out_buffers, audioFrame.get()->nb_samples,
+                (const uint8_t**)audioFrame.get()->data, audioFrame.get()->nb_samples);
+
+            if (convertedSamples < 0)
+            {
+                CELUX_DEBUG("Failed to convert audio samples.");
+    
+                return torch::Tensor();
+            }
+
+            // Append samples to audioBuffer
+            int16_t* samples = reinterpret_cast<int16_t*>(buffer.data());
+            int numSamples = convertedSamples * audioCodecCtx->ch_layout.nb_channels;
+            audioBuffer.insert(audioBuffer.end(), samples, samples + numSamples);
+        }
+    }
+
+    // Flush decoder
+    avcodec_send_packet(audioCodecCtx.get(), nullptr);
+    while (avcodec_receive_frame(audioCodecCtx.get(), audioFrame.get()) >= 0)
+    {
+        // Allocate buffer for converted samples
+        int dstNbSamples = swr_get_delay(swrCtx.get(), audioCodecCtx->sample_rate) +
+                           audioFrame.get()->nb_samples;
+
+        // Allocate buffer for converted samples
+        int bufferSize =
+            av_samples_get_buffer_size(nullptr, audioCodecCtx->ch_layout.nb_channels,
+                                                    audioFrame.get()->nb_samples,
+                                                    AV_SAMPLE_FMT_S16, 1);
+        if (bufferSize < 0)
+        {
+            CELUX_DEBUG(
+                "Failed to calculate buffer size for audio samples during flush.");
+            return torch::Tensor();
+        }
+
+        std::vector<uint8_t> buffer(bufferSize);
+        uint8_t* out_buffers[] = {buffer.data()};
+        // Convert samples to S16
+        int convertedSamples =
+            swr_convert(swrCtx.get(), out_buffers, audioFrame.get()->nb_samples,
+            (const uint8_t**)audioFrame.get()->data, audioFrame.get()->nb_samples);
+
+        if (convertedSamples < 0)
+        {
+            CELUX_DEBUG("Failed to convert audio samples during flush.");
+            return torch::Tensor();
+        }
+
+        // Append samples to audioBuffer
+        int16_t* samples = reinterpret_cast<int16_t*>(buffer.data());
+        int numSamples = convertedSamples * audioCodecCtx->ch_layout.nb_channels;
+        audioBuffer.insert(audioBuffer.end(), samples, samples + numSamples);
+    }
+
+    if (audioBuffer.empty())
+    {
+        CELUX_DEBUG("No audio samples were extracted.");
+        return torch::Tensor();
+    }
+
+    // Create a Torch tensor from the buffer
+    torch::TensorOptions options = torch::TensorOptions().dtype(torch::kInt16);
+    torch::Tensor audioTensor =
+        torch::from_blob(audioBuffer.data(), {static_cast<long>(audioBuffer.size())},
+                         options)
+            .clone(); // Clone to ensure the tensor owns its memory
+
+    CELUX_DEBUG("Audio extraction to tensor completed successfully.");
+    return audioTensor;
+}
 
 
 } // namespace celux

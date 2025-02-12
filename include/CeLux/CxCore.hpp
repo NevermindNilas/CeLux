@@ -573,11 +573,21 @@ struct AVFilterGraphDeleter
         avfilter_graph_free(&graph);
     }
 };
+// SwrContext* swrCtx = nullptr;
+struct SwrContextDeleter
+{
+    void operator()(SwrContext* ctx) const
+    {
+		swr_free(&ctx);
+	}
+};
+
 using AVFormatContextPtr = std::unique_ptr<AVFormatContext, AVFormatContextDeleter>;
     using AVCodecContextPtr = std::unique_ptr<AVCodecContext, AVCodecContextDeleter>;
     using AVBufferRefPtr = std::unique_ptr<AVBufferRef, AVBufferRefDeleter>;
     using AVPacketPtr = std::unique_ptr<AVPacket, AVPacketDeleter>;
     using AVFilterGraphPtr = std::unique_ptr<AVFilterGraph, AVFilterGraphDeleter>;
+    using SwrContextPtr = std::unique_ptr<SwrContext, SwrContextDeleter>;
 
 } // namespace celux
 

@@ -1,0 +1,64 @@
+# .github/workflows/release_and_benchmark.yaml
+
+name: Release and Benchmark Tests
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'build.py'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'cpusetup.py'
+      - 'gpusetup.py'
+      - 'README.md'
+      - 'LICENSE'
+      - 'tests/**'
+      - 'scripts/**'
+      - '.github/workflows/release_and_benchmark.yaml'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest  # Changed to Ubuntu for better compatibility
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4  # Updated to the latest version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5  # Updated to the latest version
+        with:
+          python-version: '3.12.9'
+
+      - name: Install Build Dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+
+      - name: Get version from build.py
+        id: get_version
+        run: |
+          VERSION=$(python -c "import build; print(build.VERSION)")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Build the Packages
+        run: |
+          python build.py 
+
+      - name: List dist contents
+        run: |
+          ls -la dist/
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          body: "Automated release of version ${{ env.VERSION }}"
+          draft: false
+          prerelease: false
+          artifacts: |
+            dist/*.whl
+            dist/*.tar.gz
+        continue-on-error: true  # Retains the workflow even if this step fails

@@ -1,6 +1,6 @@
 # .github/workflows/release_and_benchmark.yaml
 
-name: Release and Benchmark Tests
+name: Create wheel only
 
 on:
   push:

@@ -34,6 +34,9 @@ jobs:
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/vcpkg
+          runVcpkgInstall: true
+          doNotUpdateVcpkg: true
           
       - name: Setup CMake
         uses: lukka/get-cmake@latest

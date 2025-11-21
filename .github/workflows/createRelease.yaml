@@ -119,70 +119,70 @@ jobs:
         name: windows-wheel-Release
         path: '**/dist/*.whl'
 
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python (host only, cibuildwheel uses Docker for Linux)
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install cibuildwheel
-        run: python -m pip install cibuildwheel==2.20.0
-
-      - name: Build Linux wheel (manylinux)
-        env:
-          CIBW_BUILD: "cp313-manylinux*_x86_64"
-          CIBW_ARCHS_LINUX: "x86_64"
-          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
-          CIBW_ENVIRONMENT_LINUX: >-
-            SKBUILD_CONFIG=Release
-            SKBUILD_GENERATOR=Ninja
-            VCPKG_TARGET_TRIPLET=x64-linux-dynamic
-            VCPKG_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-            VCPKG_FORCE_SYSTEM_BINARIES=1
-            CC=gcc
-            CXX=g++
-            CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-                        -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
-                        -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
-                        -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
-
-          CIBW_BEFORE_ALL_LINUX: |
-            (command -v dnf >/dev/null 2>&1 && dnf -y install \
-               git pkgconf nasm zip unzip curl tar \
-               gcc gcc-c++ make ninja-build cmake || \
-             command -v yum >/dev/null 2>&1 && yum -y install \
-               git pkgconf nasm zip unzip curl tar \
-               gcc gcc-c++ make ninja-build cmake)
-            git clone https://github.com/microsoft/vcpkg /opt/vcpkg
-            /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-            /opt/vcpkg/vcpkg install spdlog fmt ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
-
-          CIBW_BEFORE_BUILD_LINUX: |
-            python -m pip install -U pip wheel setuptools
-            python -m pip install --only-binary=:all: "pybind11>=2.11"
-            python -m pip install --only-binary=:all: torch || python -m pip install --only-binary=:all: --index-url https://download.pytorch.org/whl/cpu torch
-          
-
-          CIBW_TEST_REQUIRES: "torch"
-          CIBW_OUTPUT_DIR: dist
-        run: python -m cibuildwheel --platform linux
-
-      - name: List dist folder
-        run: ls -l dist
-  
-      - name: Upload Linux wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-wheel-Release
-          path: 'dist/*.whl'
+  #build-linux:
+  #  runs-on: ubuntu-latest
+  #  steps:
+  #    - name: Checkout code
+  #      uses: actions/checkout@v4
+#
+  #    - name: Set up Python (host only, cibuildwheel uses Docker for Linux)
+  #      uses: actions/setup-python@v4
+  #      with:
+  #        python-version: ${{ env.PYTHON_VERSION }}
+#
+  #    - name: Install cibuildwheel
+  #      run: python -m pip install cibuildwheel==2.20.0
+#
+  #    - name: Build Linux wheel (manylinux)
+  #      env:
+  #        CIBW_BUILD: "cp313-manylinux*_x86_64"
+  #        CIBW_ARCHS_LINUX: "x86_64"
+  #        CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+  #        CIBW_ENVIRONMENT_LINUX: >-
+  #          SKBUILD_CONFIG=Release
+  #          SKBUILD_GENERATOR=Ninja
+  #          VCPKG_TARGET_TRIPLET=x64-linux-dynamic
+  #          VCPKG_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+  #          VCPKG_FORCE_SYSTEM_BINARIES=1
+  #          CC=gcc
+  #          CXX=g++
+  #          CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+  #                      -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
+  #                      -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
+  #                      -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
+#
+  #        CIBW_BEFORE_ALL_LINUX: |
+  #          (command -v dnf >/dev/null 2>&1 && dnf -y install \
+  #             git pkgconf nasm zip unzip curl tar \
+  #             gcc gcc-c++ make ninja-build cmake || \
+  #           command -v yum >/dev/null 2>&1 && yum -y install \
+  #             git pkgconf nasm zip unzip curl tar \
+  #             gcc gcc-c++ make ninja-build cmake)
+  #          git clone https://github.com/microsoft/vcpkg /opt/vcpkg
+  #          /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+  #          /opt/vcpkg/vcpkg install spdlog fmt ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
+#
+  #        CIBW_BEFORE_BUILD_LINUX: |
+  #          python -m pip install -U pip wheel setuptools
+  #          python -m pip install --only-binary=:all: "pybind11>=2.11"
+  #          python -m pip install --only-binary=:all: torch || python -m pip install --only-binary=:all: --index-url https://download.pytorch.org/whl/cpu torch
+  #        
+#
+  #        CIBW_TEST_REQUIRES: "torch"
+  #        CIBW_OUTPUT_DIR: dist
+  #      run: python -m cibuildwheel --platform linux
+#
+  #    - name: List dist folder
+  #      run: ls -l dist
+  #
+  #    - name: Upload Linux wheel
+  #      uses: actions/upload-artifact@v4
+  #      with:
+  #        name: linux-wheel-Release
+  #        path: 'dist/*.whl'
 
   release:
-    needs: [build-windows, build-linux]
+    needs: [build-windows]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     steps:
@@ -193,11 +193,11 @@ jobs:
         with:
           name: windows-wheel-Release
           path: dist
-      - name: Download Linux wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-wheel-Release
-          path: dist
+  #    - name: Download Linux wheels
+  #      uses: actions/download-artifact@v4
+  #      with:
+  #        name: linux-wheel-Release
+  #        path: dist
       - name: List all files for debug
         run: ls -lR dist
       - name: Install tomllib (if needed)
@@ -226,38 +226,39 @@ jobs:
           name:  Release v${{ env.VERSION }}
           body:  Automated CI build & wheel
           artifacts: 'dist/*.whl'
-
-  pypi-publish:
-    needs: release
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
-    steps:
-      - name: Download Linux wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-wheel-Release
-          path: dist
-
-      - name: Download Windows wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-wheel-Release
-          path: dist
-
-      - name: Flatten wheels into top-level dist/
-        run: |
-          mkdir -p upload
-          find dist -type f -name '*.whl' -exec mv -t upload {} +
-          # include sdist if you start building it:
-          find dist -type f -name '*.tar.gz' -exec mv -t upload {} + || true
-          rm -rf dist
-          mv upload dist
-          ls -l dist
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.4.2
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_TOKEN }}
-          skip_existing: true
-          packages_dir: dist
+#
+  #pypi-publish:
+  #  needs: release
+  #  runs-on: ubuntu-latest
+  #  if: github.ref == 'refs/heads/master'
+  #  steps:
+  #    - name: Download Linux wheels
+  #      uses: actions/download-artifact@v4
+  #      with:
+  #        name: linux-wheel-Release
+  #        path: dist
+#
+  #    - name: Download Windows wheels
+  #      uses: actions/download-artifact@v4
+  #      with:
+  #        name: windows-wheel-Release
+  #        path: dist
+#
+  #    - name: Flatten wheels into top-level dist/
+  #      run: |
+  #        mkdir -p upload
+  #        find dist -type f -name '*.whl' -exec mv -t upload {} +
+  #        # include sdist if you start building it:
+  #        find dist -type f -name '*.tar.gz' -exec mv -t upload {} + || true
+  #        rm -rf dist
+  #        mv upload dist
+  #        ls -l dist
+#
+  #    - name: Publish to PyPI
+  #      uses: pypa/gh-action-pypi-publish@v1.4.2
+  #      with:
+  #        user: __token__
+  #        password: ${{ secrets.PYPI_TOKEN }}
+  #        skip_existing: true
+  #        packages_dir: dist
+#

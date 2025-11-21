@@ -1,0 +1,88 @@
+name: Quality Benchmark
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.13'
+  VCPKG_LIBRARY_LINKAGE: dynamic
+
+jobs:
+  benchmark-windows:
+    runs-on: windows-latest
+    env:
+      SKBUILD_CONFIG: Release
+      VCPKG_TARGET_TRIPLET: x64-windows
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Upgrade pip & install python deps
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        python -m pip install pybind11 torch numpy opencv-python scikit-image
+
+    - name: Cache vcpkg
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ runner.temp }}/vcpkg
+          ${{ runner.temp }}/vcpkg/installed
+          ${{ runner.temp }}/vcpkg/archives
+        key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
+
+    - name: Bootstrap vcpkg
+      shell: powershell
+      run: |
+        if (-not (Test-Path "${{ runner.temp }}/vcpkg")) {
+          git clone https://github.com/microsoft/vcpkg.git "${{ runner.temp }}/vcpkg"
+        }
+        & "${{ runner.temp }}/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+
+    - name: Install C++ deps via vcpkg
+      shell: cmd
+      run: |
+        "${{ runner.temp }}\\vcpkg\\vcpkg" install spdlog fmt ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-windows --recurse
+
+    - name: Add FFmpeg to PATH
+      shell: bash
+      run: |
+        echo "${{ runner.temp }}/vcpkg/installed/x64-windows/tools/ffmpeg" >> $GITHUB_PATH
+
+    - name: Install Celux (Build from Source)
+      shell: bash
+      env:
+        SKBUILD_GENERATOR: Ninja
+        SKBUILD_CONFIG: Release
+        VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
+        VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+        VCPKG_TARGET_TRIPLET:  x64-windows
+        CMAKE_ARGS: >-
+          -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows
+          -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows/share/ffmpeg
+      run: python -m pip install . -v
+
+    - name: Run Quality Benchmark
+      shell: bash
+      run: |
+        python tests/benchmark_quality.py
+
+    - name: Upload Benchmark Outputs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-videos
+        path: benchmark_outputs/*.mp4

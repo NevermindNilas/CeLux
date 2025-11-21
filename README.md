@@ -8,10 +8,11 @@
 
 # CeLux
 
+Originally created by [Trentonom0r3](https://github.com/Trentonom0r3)
+
 **CeLux** is a high‑performance Python library for video processing, leveraging the power of libav(FFmpeg). It delivers some of the fastest decode times for full‑HD videos globally, enabling efficient video decoding directly into PyTorch tensors—and now simplified, one‑call audio muxing straight from a tensor. At present, CeLux offers ***limited, but functional*** encoding support.
 
 The name **CeLux** comes from the Latin words _celer_ (speed) and _lux_ (light), reflecting its commitment to speed and efficiency.
-
 
 # [Check out the latest changes](https://github.com/Trentonom0r3/CeLux/blob/master/docs/CHANGELOG.md#version-073)
 ## [0.7.3] - 2025-08-17

@@ -90,8 +90,16 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
 
     if (!converter)
     { 
+        // Use BT.709 for both source and destination to match AutoToRGB behavior
+        // Use Bicubic scaling for better quality
         converter = std::make_unique<celux::conversion::cpu::RGBToAutoConverter>(
-            width, height, AV_PIX_FMT_YUV420P);
+            width, height, AV_PIX_FMT_YUV420P,
+            1,               // srcRange: Full (RGB)
+            0,               // dstRange: Limited (YUV)
+            SWS_CS_ITU709,   // srcMatrix: BT.709 (Matches AutoToRGB)
+            SWS_CS_ITU709,   // dstMatrix: BT.709 (Matches AutoToRGB)
+            SWS_BICUBIC      // scalingFlags: High quality
+        );
     }
 
     // ✅ Pass raw pointer from safe CPU tensor

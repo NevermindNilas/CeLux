@@ -28,8 +28,13 @@ namespace cpu
 class RGBToAutoConverter : public ConverterBase
 {
   public:
-    RGBToAutoConverter(int dstWidth, int dstHeight, AVPixelFormat dstPixFmt)
-        : ConverterBase(), width(dstWidth), height(dstHeight), dst_fmt(dstPixFmt)
+    RGBToAutoConverter(int dstWidth, int dstHeight, AVPixelFormat dstPixFmt,
+                       int srcRange = 1, int dstRange = 0,
+                       int srcMatrixType = SWS_CS_DEFAULT,
+                       int dstMatrixType = SWS_CS_DEFAULT, int scalingFlags = SWS_BICUBIC)
+        : ConverterBase(), width(dstWidth), height(dstHeight), dst_fmt(dstPixFmt),
+          srcRange(srcRange), dstRange(dstRange), srcMatrixType(srcMatrixType),
+          dstMatrixType(dstMatrixType), scalingFlags(scalingFlags)
     {
         CELUX_DEBUG("Initializing RGBToAutoConverter ({}x{})", width, height);
     }
@@ -65,16 +70,14 @@ class RGBToAutoConverter : public ConverterBase
 
             swsContext =
                 sws_getContext(width, height, AV_PIX_FMT_RGB24, width, height, dst_fmt,
-                               SWS_BILINEAR, nullptr, nullptr, nullptr);
+                               scalingFlags, nullptr, nullptr, nullptr);
 
             if (!swsContext)
                 throw std::runtime_error(
                     "Failed to initialize swsContext for RGBToAutoConverter");
 
-            int srcRange = 1; // full (0-255)
-            int dstRange = 0; // limited (16-235)
-            const int* srcMatrix = sws_getCoefficients(SWS_CS_DEFAULT);
-            const int* dstMatrix = sws_getCoefficients(SWS_CS_DEFAULT);
+            const int* srcMatrix = sws_getCoefficients(srcMatrixType);
+            const int* dstMatrix = sws_getCoefficients(dstMatrixType);
             sws_setColorspaceDetails(swsContext, srcMatrix, srcRange, dstMatrix,
                                      dstRange, 0, 1 << 16, 1 << 16);
 
@@ -128,6 +131,11 @@ class RGBToAutoConverter : public ConverterBase
     int width;
     int height;
     AVPixelFormat dst_fmt;
+    int srcRange;
+    int dstRange;
+    int srcMatrixType;
+    int dstMatrixType;
+    int scalingFlags;
 };
 
 } // namespace cpu

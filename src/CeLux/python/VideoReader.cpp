@@ -38,8 +38,14 @@ VideoReader::VideoReader(const std::string& filePath, int numThreads)
         properties = decoder->getVideoProperties();
 
         torch::Dtype torchDataType = findTypeFromBitDepth();
+        // Allocate 1D tensor for YUV420P (1.5 bytes/pixel for 8-bit, 3 bytes/pixel for 16-bit)
+        // The size calculation assumes YUV420P layout: Y + U + V
+        // Y: w*h, U: (w/2)*(h/2), V: (w/2)*(h/2)
+        // Total elements = w*h + 2*(w/2 * h/2) <= w*h * 1.5
+        long long total_elements = static_cast<long long>(properties.height) * properties.width * 3 / 2;
+        
         tensor = torch::empty(
-            {properties.height, properties.width, 3},
+            {total_elements},
             torch::TensorOptions().dtype(torchDataType).device(torchDevice));
         CHECK_TENSOR(tensor);
     }
@@ -224,8 +230,9 @@ torch::Tensor VideoReader::readFrame()
 
 torch::Tensor VideoReader::makeLikeOutputTensor() const
 {
+    long long total_elements = static_cast<long long>(properties.height) * properties.width * 3 / 2;
     return torch::empty(
-        {properties.height, properties.width, 3},
+        {total_elements},
         torch::TensorOptions().dtype(tensor.dtype()).device(tensor.device()));
 }
 

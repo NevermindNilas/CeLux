@@ -6,17 +6,22 @@ import torch
 import sys
 
 from celux import VideoReader
+from celux.color import yuv_to_rgb
 from tests.utils.video_downloader import get_video  # utility to download open source test clips
 
 VIDEO_PATH = get_video("lite")  # default to full video, change to "lite" for shorter video.
 
-def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int) -> np.ndarray:
+def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int, width: int, height: int) -> np.ndarray:
     """
-    Convert HxWxC torch tensor (uint8/uint16/float) to uint8 BGR for cv2.imshow.
+    Convert HxWxC torch tensor (uint8/uint16/float) or 1D YUV tensor to uint8 BGR for cv2.imshow.
     Assumes RGB order from VideoReader. Returns a numpy array.
     """
     if frame.numel() == 0:
         return None
+
+    # Handle YUV 1D tensor
+    if frame.dim() == 1:
+        frame = yuv_to_rgb(frame, width, height, bit_depth)
 
     # Move to CPU and numpy (zero-copy when possible)
     arr = frame.cpu().contiguous().numpy()  # HWC, channels=3
@@ -29,9 +34,11 @@ def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int) -> np.ndarray:
         shift = max(0, bit_depth - 8)
         rgb8 = (arr >> shift).astype(np.uint8)
     elif arr.dtype in (np.float16, np.float32, np.float64):
-        # Assume 0..1; clamp and scale
-        rgb8 = np.clip(arr, 0.0, 1.0)
-        rgb8 = (rgb8 * 255.0 + 0.5).astype(np.uint8)
+        # Assume 0..255 (from yuv_to_rgb) or 0..1
+        if arr.max() > 1.0:
+             rgb8 = np.clip(arr, 0.0, 255.0).astype(np.uint8)
+        else:
+             rgb8 = np.clip(arr * 255.0, 0.0, 255.0).astype(np.uint8)
     elif arr.dtype == np.uint32:
         # Very rare as video output; downscale conservatively
         rgb8 = (arr >> 24).astype(np.uint8)
@@ -55,6 +62,8 @@ def main():
     duration = float(props["duration"])
     total_frames = int(props["total_frames"])
     bit_depth = int(props.get("bit_depth", 8))
+    width = int(props["width"])
+    height = int(props["height"])
 
     print("Video properties:", props)
 
@@ -71,7 +80,7 @@ def main():
                 print("EOF or decode fail")
                 break
 
-            img = tensor_to_bgr_uint8(frame, bit_depth)
+            img = tensor_to_bgr_uint8(frame, bit_depth, width, height)
             if img is None:
                 print("Bad frame")
                 break
@@ -88,7 +97,7 @@ def main():
                 t = random.uniform(0.0, max(0.0, duration - 0.001))
                 try:
                     rnd = vr.frame_at(t)  # uses the secondary decoder; won't disturb sequential
-                    rnd_img = tensor_to_bgr_uint8(rnd, bit_depth)
+                    rnd_img = tensor_to_bgr_uint8(rnd, bit_depth, width, height)
                     if rnd_img is not None:
                         cv2.putText(rnd_img, f"Random @ {t:.3f}s", (15, 30),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2, cv2.LINE_AA)

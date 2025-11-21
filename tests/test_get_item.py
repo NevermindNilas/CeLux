@@ -6,14 +6,20 @@ import sys
 sys.path.append(".")
 
 from celux import VideoReader
+from celux.color import yuv_to_rgb
 from utils.video_downloader import get_video
 
 VIDEO_PATH = get_video("lite")  # short clip for quick manual runs
 
-def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int) -> np.ndarray | None:
-    """Convert HxWxC tensor (uint8/uint16/float/uint32) to uint8 BGR for imshow."""
+def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int, width: int, height: int) -> np.ndarray | None:
+    """Convert HxWxC tensor (uint8/uint16/float/uint32) or 1D YUV tensor to uint8 BGR for imshow."""
     if frame is None or (frame.numel() == 0):
         return None
+    
+    # Handle YUV 1D tensor
+    if frame.dim() == 1:
+        frame = yuv_to_rgb(frame, width, height, bit_depth)
+
     arr = frame.cpu().contiguous().numpy()  # HWC
     if arr.dtype == np.uint8:
         rgb8 = arr
@@ -21,7 +27,10 @@ def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int) -> np.ndarray | Non
         shift = max(0, bit_depth - 8)
         rgb8 = (arr >> shift).astype(np.uint8)
     elif arr.dtype in (np.float16, np.float32, np.float64):
-        rgb8 = (np.clip(arr, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+        if arr.max() > 1.0:
+             rgb8 = np.clip(arr, 0.0, 255.0).astype(np.uint8)
+        else:
+             rgb8 = (np.clip(arr, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
     elif arr.dtype == np.uint32:
         rgb8 = (arr >> 24).astype(np.uint8)
     else:
@@ -39,6 +48,8 @@ def main():
     duration = float(props["duration"])
     total_frames = int(props["total_frames"])
     bit_depth = int(props.get("bit_depth", 8))
+    width = int(props["width"])
+    height = int(props["height"])
 
     print("Video properties:", props)
 
@@ -55,7 +66,7 @@ def main():
             if frame is None:
                 print("EOF or decode fail")
                 break
-            img = tensor_to_bgr_uint8(frame, bit_depth)
+            img = tensor_to_bgr_uint8(frame, bit_depth, width, height)
             if img is None:
                 print("Bad frame")
                 break
@@ -69,7 +80,7 @@ def main():
                 t = random.uniform(0.0, max(0.0, duration - 0.001))
                 try:
                     rnd = vr.frame_at(t)  # explicit random-access path
-                    rnd_img = tensor_to_bgr_uint8(rnd, bit_depth)
+                    rnd_img = tensor_to_bgr_uint8(rnd, bit_depth, width, height)
                     if rnd_img is not None:
                         cv2.putText(rnd_img, f"Random @ {t:.3f}s (frame_at)", (15, 30),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2, cv2.LINE_AA)
@@ -82,7 +93,7 @@ def main():
             near_ts = min(duration, i / max(1.0, fps) + 1.0 / max(1.0, fps))
             try:
                 smart = vr[near_ts]
-                smart_img = tensor_to_bgr_uint8(smart, bit_depth)
+                smart_img = tensor_to_bgr_uint8(smart, bit_depth, width, height)
                 if smart_img is not None:
                     cv2.putText(smart_img, f"Smart __getitem__ ~{near_ts:.3f}s", (15, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2, cv2.LINE_AA)
@@ -99,7 +110,7 @@ def main():
             t = random.uniform(0.0, max(0.0, duration - 0.001))
             try:
                 rnd = vr.frame_at(t)
-                rnd_img = tensor_to_bgr_uint8(rnd, bit_depth)
+                rnd_img = tensor_to_bgr_uint8(rnd, bit_depth, width, height)
                 if rnd_img is not None:
                     cv2.putText(rnd_img, f"Random @ {t:.3f}s (manual)", (15, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2, cv2.LINE_AA)

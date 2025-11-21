@@ -147,7 +147,7 @@ void Decoder::initialize(const std::string& filePath)
     initCodecContext();
     setProperties();
 
-    converter = std::make_unique<celux::conversion::cpu::AutoToRGBConverter>();
+    converter = std::make_unique<celux::conversion::cpu::AutoToYUVConverter>();
     const AVCodecParameters* params = formatCtx->streams[videoStreamIndex]->codecpar;
     AVColorSpace color_space = params->color_space;         // matrix_coefficients
     AVColorPrimaries colorprim = params->color_primaries;  // color primaries

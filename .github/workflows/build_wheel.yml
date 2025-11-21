@@ -34,7 +34,7 @@ jobs:
           ${{ runner.temp }}/vcpkg
           ${{ runner.temp }}/vcpkg/installed
           ${{ runner.temp }}/vcpkg/archives
-        key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('vcpkg.json','vcpkg-lock.json') }}
+        key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('pyproject.toml') }}
         restore-keys: |
           vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
 
@@ -81,11 +81,21 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.20.0
 
+      # Cache vcpkg directory on the host
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: /tmp/vcpkg_cache
+          key: vcpkg-linux-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            vcpkg-linux-
+
       - name: Build Linux wheel
         env:
           CIBW_BUILD: "cp313-manylinux*_x86_64"
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_CONTAINER_OPTIONS: "-v /tmp/vcpkg_cache:/opt/vcpkg"
           CIBW_ENVIRONMENT_LINUX: >-
             SKBUILD_CONFIG=Release
             SKBUILD_GENERATOR=Ninja
@@ -105,7 +115,10 @@ jobs:
              command -v yum >/dev/null 2>&1 && yum -y install \
                git pkgconf nasm zip unzip curl tar \
                gcc gcc-c++ make ninja-build cmake)
-            git clone https://github.com/microsoft/vcpkg /opt/vcpkg
+            # Only clone if not already present (from cache)
+            if [ ! -d "/opt/vcpkg/.git" ]; then
+                git clone https://github.com/microsoft/vcpkg /opt/vcpkg
+            fi
             /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
             /opt/vcpkg/vcpkg install spdlog fmt ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
           CIBW_BEFORE_BUILD_LINUX: |

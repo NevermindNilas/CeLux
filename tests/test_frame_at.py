@@ -7,11 +7,18 @@ import sys
 
 from celux import VideoReader
 from celux.color import yuv_to_rgb
-from tests.utils.video_downloader import get_video  # utility to download open source test clips
+from tests.utils.video_downloader import (
+    get_video,
+)  # utility to download open source test clips
 
-VIDEO_PATH = get_video("lite")  # default to full video, change to "lite" for shorter video.
+VIDEO_PATH = get_video(
+    "lite"
+)  # default to full video, change to "lite" for shorter video.
 
-def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int, width: int, height: int) -> np.ndarray:
+
+def tensor_to_bgr_uint8(
+    frame: torch.Tensor, bit_depth: int, width: int, height: int
+) -> np.ndarray:
     """
     Convert HxWxC torch tensor (uint8/uint16/float) or 1D YUV tensor to uint8 BGR for cv2.imshow.
     Assumes RGB order from VideoReader. Returns a numpy array.
@@ -36,9 +43,9 @@ def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int, width: int, height:
     elif arr.dtype in (np.float16, np.float32, np.float64):
         # Assume 0..255 (from yuv_to_rgb) or 0..1
         if arr.max() > 1.0:
-             rgb8 = np.clip(arr, 0.0, 255.0).astype(np.uint8)
+            rgb8 = np.clip(arr, 0.0, 255.0).astype(np.uint8)
         else:
-             rgb8 = np.clip(arr * 255.0, 0.0, 255.0).astype(np.uint8)
+            rgb8 = np.clip(arr * 255.0, 0.0, 255.0).astype(np.uint8)
     elif arr.dtype == np.uint32:
         # Very rare as video output; downscale conservatively
         rgb8 = (arr >> 24).astype(np.uint8)
@@ -53,6 +60,7 @@ def tensor_to_bgr_uint8(frame: torch.Tensor, bit_depth: int, width: int, height:
     # Convert RGB->BGR for OpenCV
     bgr8 = cv2.cvtColor(rgb8, cv2.COLOR_RGB2BGR)
     return bgr8
+
 
 def main():
     path = VIDEO_PATH
@@ -86,8 +94,16 @@ def main():
                 break
 
             # Annotate and show sequential frame
-            cv2.putText(img, f"Sequential frame {i}/{total_frames}", (15, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+            cv2.putText(
+                img,
+                f"Sequential frame {i}/{total_frames}",
+                (15, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
             cv2.imshow("Sequential", img)
             i += 1
 
@@ -96,35 +112,54 @@ def main():
                 # pick a random timestamp safely within duration
                 t = random.uniform(0.0, max(0.0, duration - 0.001))
                 try:
-                    rnd = vr.frame_at(t)  # uses the secondary decoder; won't disturb sequential
+                    rnd = vr.frame_at(
+                        t
+                    )  # uses the secondary decoder; won't disturb sequential
                     rnd_img = tensor_to_bgr_uint8(rnd, bit_depth, width, height)
                     if rnd_img is not None:
-                        cv2.putText(rnd_img, f"Random @ {t:.3f}s", (15, 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2, cv2.LINE_AA)
-                        #cv2.imshow("RandomAccess", rnd_img)
+                        cv2.putText(
+                            rnd_img,
+                            f"Random @ {t:.3f}s",
+                            (15, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.8,
+                            (0, 200, 255),
+                            2,
+                            cv2.LINE_AA,
+                        )
+                        # cv2.imshow("RandomAccess", rnd_img)
                     last_random_show = i
                 except Exception as e:
                     print(f"Random access failed: {e}")
 
         # UI controls
         key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
+        if key == ord("q"):
             break
-        elif key == ord(' '):  # pause / resume
+        elif key == ord(" "):  # pause / resume
             paused = not paused
-        elif key == ord('r'):  # on-demand random access
+        elif key == ord("r"):  # on-demand random access
             t = random.uniform(0.0, max(0.0, duration - 0.001))
             try:
                 rnd = vr.frame_at(t)
                 rnd_img = tensor_to_bgr_uint8(rnd, bit_depth)
                 if rnd_img is not None:
-                    cv2.putText(rnd_img, f"Random @ {t:.3f}s (manual)", (15, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2, cv2.LINE_AA)
-                  #  cv2.imshow("RandomAccess", rnd_img)
+                    cv2.putText(
+                        rnd_img,
+                        f"Random @ {t:.3f}s (manual)",
+                        (15, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        (0, 200, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
+            #  cv2.imshow("RandomAccess", rnd_img)
             except Exception as e:
                 print(f"Random access failed: {e}")
 
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()

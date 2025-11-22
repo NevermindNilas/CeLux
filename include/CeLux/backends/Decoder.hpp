@@ -3,6 +3,7 @@
 #include "error/CxException.hpp"
 #include <Conversion.hpp>
 #include <Frame.hpp>
+#include <torch/torch.h>
 
 namespace celux
 {
@@ -48,9 +49,13 @@ class Decoder
     virtual VideoProperties getVideoProperties() const;
     virtual bool isOpen() const;
     virtual void close();
+    void setLibyuvEnabled(bool enabled);
+    void setForce8Bit(bool enabled);
+    int getBitDepth() const;
+
     virtual std::vector<std::string> listSupportedDecoders() const;
     AVCodecContext* getCtx();
-    int getBitDepth() const;
+
     bool extractAudioToFile(const std::string& outputFilePath);
     torch::Tensor getAudioTensor();
 
@@ -64,15 +69,16 @@ class Decoder
 
     double getFrameTimestamp(AVFrame* frame);
 
-    AVFormatContextPtr formatCtx;
-    AVCodecContextPtr codecCtx;
-    AVPacketPtr pkt;
-    int videoStreamIndex;
-    VideoProperties properties;
-    Frame frame; // custom wrapper around AVframe, handles mem, most ops w/ it.
     std::unique_ptr<celux::conversion::IConverter> converter;
+    std::unique_ptr<AVFormatContext, AVFormatContextDeleter> formatCtx;
+    std::unique_ptr<AVCodecContext, AVCodecContextDeleter> codecCtx;
+    std::unique_ptr<AVPacket, AVPacketDeleter> pkt;
+    int videoStreamIndex;
     int numThreads;
-
+    VideoProperties properties;
+    Frame frame;
+    bool libyuv_enabled = true;
+    bool force_8bit = false;
     int audioStreamIndex = -1;
     AVCodecContextPtr audioCodecCtx;
     Frame audioFrame;

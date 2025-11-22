@@ -19,7 +19,8 @@ class VideoReader
      * @param device Processing device ("cpu" or "cuda").
      */
     VideoReader(const std::string& filePath,
-                int numThreads = static_cast<int>(std::thread::hardware_concurrency() / 2));
+                int numThreads = static_cast<int>(std::thread::hardware_concurrency() / 2),
+                bool force_8bit = false);
 
     /**
      * @brief Destructor for VideoReader.
@@ -35,19 +36,36 @@ class VideoReader
      */
     std::shared_ptr<celux::VideoEncoder> createEncoder(const std::string& outputPath) const;
 
+    // Direct property getters for performance
+    int getWidth() const { return properties.width; }
+    int getHeight() const { return properties.height; }
+    double getFps() const { return properties.fps; }
+    double getMinFps() const { return properties.min_fps; }
+    double getMaxFps() const { return properties.max_fps; }
+    double getDuration() const { return properties.duration; }
+    int getTotalFrames() const { return properties.totalFrames; }
+    bool getHasAudio() const { return properties.hasAudio; }
+    int getAudioBitrate() const { return properties.audioBitrate; }
+    int getAudioChannels() const { return properties.audioChannels; }
+    int getAudioSampleRate() const { return properties.audioSampleRate; }
+    std::string getAudioCodec() const { return properties.audioCodec; }
+    int getBitDepth() const { return properties.bitDepth; }
+    double getAspectRatio() const { return properties.aspectRatio; }
+    std::string getCodec() const { return properties.codec; }
+    std::string getPixelFormat() const;
+    
     /**
-     * @brief Overloads the [] operator to access video properties by key.
+     * @brief Get the properties of the video.
      *
-     * @param key The property key to access.
-     * @return py::object The value associated with the key.
+     * @return py::dict Dictionary containing video properties.
      */
-    py::object operator[](py::object key);
+    py::dict getProperties() const;
+
     /**
      * @brief Read a frame from the video.
      *
      * Depending on the configuration, returns either a torch::Tensor or a
-     * py::array<uint8_t>. Shape is always HWC. If batch size is specified in Reader
-     * config, output shape will be BHWC for Tensors.
+     * py::array<uint8_t>. Shape is always HWC.
      *
      * @return torch::Tensor The next frame as torch::Tensor.
      */
@@ -69,46 +87,12 @@ class VideoReader
     std::vector<std::string> supportedCodecs();
 
     /**
-     * @brief Get the properties of the video.
+     * @brief Overloads the [] operator to access video properties by key.
      *
-     * @return py::dict Dictionary containing video properties.
+     * @param key The property key to access.
+     * @return py::object The value associated with the key.
      */
-    py::dict getProperties() const;
-
-    /**
-     * @brief Reset the video reader to the beginning.
-     */
-    void reset();
-
-    /**
-     * @brief Iterator initialization for Python.
-     *
-     * @return VideoReader& Reference to the VideoReader object.
-     */
-    VideoReader& iter();
-
-    /**
-     * @brief Get the next frame in iteration.
-     *
-     * @return torch::Tensor Next frame as torch::Tensor.
-     */
-    torch::Tensor next();
-
-    /**
-     * @brief Enter method for Python context manager.
-     */
-    void enter();
-
-    /**
-     * @brief Exit method for Python context manager.
-     *
-     * @param exc_type Exception type (if any).
-     * @param exc_value Exception value (if any).
-     * @param traceback Traceback object (if any).
-     */
-    void exit(const py::object& exc_type, const py::object& exc_value,
-              const py::object& traceback);
-
+    py::object operator[](py::object key);
     /**
      * @brief Get the total number of frames.
      *
@@ -227,7 +211,38 @@ class VideoReader
      */
     torch::Tensor frameAt(int frame_index);
 
+    /**
+     * @brief Enable or disable libyuv acceleration.
+     */
+    void set_libyuv_enabled(bool enabled);
+
+    /**
+     * @brief Iterator support: returns self.
+     */
+    VideoReader& iter();
+
+    /**
+     * @brief Iterator support: returns next frame or throws StopIteration.
+     */
+    torch::Tensor next();
+
+    /**
+     * @brief Context manager enter.
+     */
+    void enter();
+
+    /**
+     * @brief Context manager exit.
+     */
+    void exit(const py::object& exc_type, const py::object& exc_value, const py::object& traceback);
+
+    /**
+     * @brief Reset the reader to the beginning.
+     */
+    void reset();
+
   private:
+    void ensureRandDecoder();
     bool seekToFrame(int frame_number);
     torch::ScalarType findTypeFromBitDepth();
     double frameDuration() const
@@ -263,6 +278,12 @@ class VideoReader
     torch::Tensor bufferedFrame; // The "first valid" frame, if we found it early
     bool hasBufferedFrame = false;
     std::shared_ptr<Audio> audio;
+
+    // Lazy loading support
+    std::string filePath;
+    int numThreads;
+    bool libyuv_enabled = true;
+    bool force_8bit = false;
 };
 
 #endif // VIDEOREADER_HPP

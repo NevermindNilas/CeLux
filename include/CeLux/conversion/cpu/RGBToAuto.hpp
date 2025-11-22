@@ -65,7 +65,8 @@ class RGBToAutoConverter : public ConverterBase
 
             swsContext =
                 sws_getContext(width, height, AV_PIX_FMT_RGB24, width, height, dst_fmt,
-                               SWS_BILINEAR, nullptr, nullptr, nullptr);
+                               SWS_LANCZOS | SWS_ACCURATE_RND, nullptr, nullptr,
+                               nullptr);
 
             if (!swsContext)
                 throw std::runtime_error(

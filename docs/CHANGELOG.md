@@ -1,8 +1,13 @@
 ## 📈 Changelog
-
 ### **Version 0.7.4 (2025-08-20)**
 - Adjusted `__getitem__` to use proper decoder dynamically. Should make it easier to use in pipelines.
 - Installed and tests `wsl` and linux version of `CeLux`, worked for me. Hopefully Updates properly.
+- **Enhanced 10-bit Support**: Implemented robust 10-bit YUV (I010) to RGB conversion using `libyuv`.
+  - Includes a fallback pipeline (`I010` -> `I420` -> `RGB`) for compatibility.
+- **Libyuv Integration**: 
+  - `libyuv` is now prioritized for color conversion when enabled.
+  - Output is automatically normalized to 8-bit (`uint8`) when using `libyuv`, ensuring consistent behavior.
+- **Fixes**: Resolved build issues related to missing `libyuv` symbols.
 
 ### **Version 0.7.3 (2025-08-17)**
 ### Added

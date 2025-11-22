@@ -5,6 +5,10 @@ build/*
 celux/*.dll
 celux/_celux.pyd
 
+# For me 
+setup_dev.ps1
+tests/generated_formats
+
 ffmpy.egg-info/*
 *.mp4
 *.mkv

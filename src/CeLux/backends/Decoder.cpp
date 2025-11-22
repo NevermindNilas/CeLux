@@ -1,7 +1,7 @@
 // Decoder.cpp
 #include "Decoder.hpp"
 #include <Factory.hpp>
-
+#include "conversion/cpu/AutoToRGB.hpp"
 
 using namespace celux::error;
 
@@ -148,6 +148,13 @@ void Decoder::initialize(const std::string& filePath)
     setProperties();
 
     converter = std::make_unique<celux::conversion::cpu::AutoToRGBConverter>();
+    auto* autoConverter = dynamic_cast<celux::conversion::cpu::AutoToRGBConverter*>(converter.get());
+    if (autoConverter)
+    {
+        autoConverter->setForce8Bit(force_8bit);
+        autoConverter->setLibyuvEnabled(libyuv_enabled);
+    }
+
     const AVCodecParameters* params = formatCtx->streams[videoStreamIndex]->codecpar;
     AVColorSpace color_space = params->color_space;         // matrix_coefficients
     AVColorPrimaries colorprim = params->color_primaries;  // color primaries
@@ -1036,5 +1043,30 @@ torch::Tensor Decoder::getAudioTensor()
     return audioTensor;
 }
 
+void Decoder::setLibyuvEnabled(bool enabled)
+{
+    libyuv_enabled = enabled;
+    if (converter)
+    {
+        auto* autoConverter = dynamic_cast<celux::conversion::cpu::AutoToRGBConverter*>(converter.get());
+        if (autoConverter)
+        {
+            autoConverter->setLibyuvEnabled(enabled);
+        }
+    }
+}
+
+void Decoder::setForce8Bit(bool enabled)
+{
+    force_8bit = enabled;
+    if (converter)
+    {
+        auto* autoConverter = dynamic_cast<celux::conversion::cpu::AutoToRGBConverter*>(converter.get());
+        if (autoConverter)
+        {
+            autoConverter->setForce8Bit(enabled);
+        }
+    }
+}
 
 } // namespace celux

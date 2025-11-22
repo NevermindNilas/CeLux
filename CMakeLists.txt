@@ -39,6 +39,7 @@ endif()
 # --- Dependencies ---
 find_package(spdlog CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
+find_package(libyuv CONFIG REQUIRED)
 
 # Support both exported names (fmt changed the hyphen/underscore in some builds)
 if(TARGET fmt::fmt-header-only)
@@ -52,6 +53,7 @@ endif()
 if(DEFINED ENV{VCPKG_ROOT} AND DEFINED VCPKG_TARGET_TRIPLET)
   set(_vcpkg_ffmpeg_mod
       "$ENV{VCPKG_ROOT}/installed/${VCPKG_TARGET_TRIPLET}/share/ffmpeg")
+  file(TO_CMAKE_PATH "${_vcpkg_ffmpeg_mod}" _vcpkg_ffmpeg_mod)
   message(STATUS "Appending vcpkg FFmpeg module path: ${_vcpkg_ffmpeg_mod}")
   list(APPEND CMAKE_MODULE_PATH "${_vcpkg_ffmpeg_mod}")
 endif()
@@ -67,6 +69,15 @@ if(CELUX_BUILD_PYTHON)
   message(STATUS "Python3: ${Python3_EXECUTABLE}")
   message(STATUS "Python3 includes: ${Python3_INCLUDE_DIRS}")
 
+  # Determine site-packages path (needed for PyTorch and fallback pybind11)
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE}
+            -c "import site; print(site.getsitepackages()[0])"
+    OUTPUT_VARIABLE Python3_SITE_PACKAGES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  message(STATUS "Python site-packages prefix: ${Python3_SITE_PACKAGES}")
+
   # -- Find pybind11 --
   find_package(pybind11 CONFIG)
   if(pybind11_FOUND)
@@ -75,14 +86,7 @@ if(CELUX_BUILD_PYTHON)
     set(CELUX_PYBIND11_LIBS pybind11::module)
   else()
     message(STATUS "pybind11 not found via CMake; falling back to pip headers")
-    execute_process(
-      COMMAND ${Python3_EXECUTABLE}
-              -c "import site; print(site.getsitepackages()[0])"
-      OUTPUT_VARIABLE Python3_SITE_PACKAGES
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    message(STATUS "Python site-packages: ${Python3_SITE_PACKAGES}")
-
+    
     if(WIN32)
       set(CELUX_PYBIND11_INCS
           "${Python3_SITE_PACKAGES}/Lib/site-packages/pybind11/include")
@@ -143,6 +147,7 @@ target_link_libraries(CeLuxLib PUBLIC
   ${CELUX_FFMPEG_LIBS}
   spdlog::spdlog_header_only
   ${FMT_HO_TARGET}
+  yuv
   $<$<BOOL:${CELUX_BUILD_PYTHON}>:torch_cpu>
   $<$<BOOL:${CELUX_BUILD_PYTHON}>:c10>
   $<$<BOOL:${CELUX_BUILD_PYTHON}>:torch>
@@ -207,7 +212,8 @@ endif()
 if(WIN32 AND CELUX_BUILD_PYTHON)
   # DLL copy logic for Windows only
   if(DEFINED ENV{VCPKG_ROOT})
-    set(VCPKG_BIN "$ENV{VCPKG_ROOT}/installed/x64-windows/bin")
+    file(TO_CMAKE_PATH "$ENV{VCPKG_ROOT}" _vcpkg_root_cmake)
+    set(VCPKG_BIN "${_vcpkg_root_cmake}/installed/x64-windows/bin")
   else()
     set(VCPKG_BIN "${CMAKE_SOURCE_DIR}/vcpkg/installed/x64-windows/bin")
   endif()
@@ -218,7 +224,10 @@ if(WIN32 AND CELUX_BUILD_PYTHON)
     "${VCPKG_BIN}/ffmpeg*.dll"
     "${VCPKG_BIN}/libx264*.dll"
     "${VCPKG_BIN}/libx265*.dll"
-
+    "${VCPKG_BIN}/libyuv*.dll"
+    "${VCPKG_BIN}/spdlog*.dll"
+    "${VCPKG_BIN}/fmt*.dll"
+    "${VCPKG_BIN}/*jpeg*.dll"
   )
   
   foreach(dll ${CELUX_DLLS})
@@ -237,7 +246,8 @@ endif()
 if(UNIX AND CELUX_BUILD_PYTHON)
   # -- where vcpkg puts its .so’s for x64-linux-dynamic
   if(DEFINED ENV{VCPKG_ROOT})
-    set(VCPKG_LIB "$ENV{VCPKG_ROOT}/installed/x64-linux-dynamic/lib")
+    file(TO_CMAKE_PATH "$ENV{VCPKG_ROOT}" _vcpkg_root_cmake)
+    set(VCPKG_LIB "${_vcpkg_root_cmake}/installed/x64-linux-dynamic/lib")
   else()
     set(VCPKG_LIB "${CMAKE_SOURCE_DIR}/vcpkg/installed/x64-linux-dynamic/lib")
   endif()
@@ -255,6 +265,9 @@ if(UNIX AND CELUX_BUILD_PYTHON)
     "${VCPKG_LIB}/libx265.so*"
     "${VCPKG_LIB}/libspdlog.so*"
     "${VCPKG_LIB}/libavfilter.so*"
+    "${VCPKG_LIB}/libyuv.so*"
+    "${VCPKG_LIB}/libfmt.so*"
+    "${VCPKG_LIB}/libturbojpeg.so*"
   )
 
   foreach(sofile ${CELUX_SOS})

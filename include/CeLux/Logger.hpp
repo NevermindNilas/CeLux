@@ -33,12 +33,24 @@ class Logger
 
 
 //conveniece macros
-#define CELUX_TRACE(...) celux::Logger::get_logger()->trace(__VA_ARGS__)
-#define CELUX_DEBUG(...) celux::Logger::get_logger()->debug(__VA_ARGS__)
-#define CELUX_INFO(...) celux::Logger::get_logger()->info(__VA_ARGS__)
-#define CELUX_WARN(...) celux::Logger::get_logger()->warn(__VA_ARGS__)
-#define CELUX_ERROR(...) celux::Logger::get_logger()->error(__VA_ARGS__)
-#define CELUX_CRITICAL(...) celux::Logger::get_logger()->critical(__VA_ARGS__)
+#define CELUX_TRACE(...)                                                       \
+    if (celux::Logger::get_logger()->should_log(spdlog::level::trace))         \
+    celux::Logger::get_logger()->trace(__VA_ARGS__)
+#define CELUX_DEBUG(...)                                                       \
+    if (celux::Logger::get_logger()->should_log(spdlog::level::debug))         \
+    celux::Logger::get_logger()->debug(__VA_ARGS__)
+#define CELUX_INFO(...)                                                        \
+    if (celux::Logger::get_logger()->should_log(spdlog::level::info))          \
+    celux::Logger::get_logger()->info(__VA_ARGS__)
+#define CELUX_WARN(...)                                                        \
+    if (celux::Logger::get_logger()->should_log(spdlog::level::warn))          \
+    celux::Logger::get_logger()->warn(__VA_ARGS__)
+#define CELUX_ERROR(...)                                                       \
+    if (celux::Logger::get_logger()->should_log(spdlog::level::err))           \
+    celux::Logger::get_logger()->error(__VA_ARGS__)
+#define CELUX_CRITICAL(...)                                                    \
+    if (celux::Logger::get_logger()->should_log(spdlog::level::critical))      \
+    celux::Logger::get_logger()->critical(__VA_ARGS__)
 
 
 

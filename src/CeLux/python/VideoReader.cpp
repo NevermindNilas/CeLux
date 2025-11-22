@@ -11,9 +11,10 @@ namespace py = pybind11;
 		throw std::runtime_error("Invalid tensor: undefined or empty");        \
 	}
 
-VideoReader::VideoReader(const std::string& filePath, int numThreads)
+VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force_8bit)
     : decoder(nullptr), rand_decoder(nullptr), currentIndex(0), start_frame(0),
-      end_frame(-1), start_time(-1.0), end_time(-1.0)
+      end_frame(-1), start_time(-1.0), end_time(-1.0), filePath(filePath),
+      numThreads(numThreads), force_8bit(force_8bit)
 {
     CELUX_INFO("VideoReader constructor called with filePath: {}", filePath);
 
@@ -27,11 +28,12 @@ VideoReader::VideoReader(const std::string& filePath, int numThreads)
 
         // Main sequential decoder
         decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads);
+        decoder->setForce8Bit(force_8bit);
         CELUX_INFO("Main decoder created successfully");
 
-        // Random-access decoder
-        rand_decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads);
-        CELUX_INFO("Random-access decoder created successfully");
+        // Random-access decoder is now lazy-loaded in ensureRandDecoder()
+        // rand_decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads);
+        // CELUX_INFO("Random-access decoder created successfully");
 
         audio = std::make_shared<Audio>(decoder);
 
@@ -426,26 +428,33 @@ py::object VideoReader::operator[](py::object key)
 
 void VideoReader::reset()
 {
-    CELUX_INFO("Resetting VideoReader to the beginning");
-    bool success = seek(0.0);
-    if (success)
+    CELUX_TRACE("reset() called: Resetting VideoReader state");
+    if (decoder)
     {
-        currentIndex = 0;
-        CELUX_INFO("VideoReader reset successfully");
+        decoder->seek(0.0);
     }
-    else
+    currentIndex = 0;
+    current_timestamp = 0.0;
+    hasBufferedFrame = false;
+    // Reset range if needed, or keep it? Usually reset() implies full reset, 
+    // but here we just reset iteration state.
+}
+
+void VideoReader::ensureRandDecoder()
+{
+    if (!rand_decoder)
     {
-        CELUX_WARN("Failed to reset VideoReader to the beginning");
+        CELUX_INFO("Initializing random-access decoder (lazy load)");
+        torch::Device torchDevice = torch::Device(torch::kCPU);
+        rand_decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads);
+        rand_decoder->setLibyuvEnabled(libyuv_enabled);
+        rand_decoder->setForce8Bit(force_8bit);
     }
 }
 
 torch::Tensor VideoReader::frameAt(double timestamp_seconds)
 {
-    CELUX_TRACE("frameAt(ts={}) using rand_decoder", timestamp_seconds);
-
-    if (timestamp_seconds < 0.0 || timestamp_seconds > properties.duration)
-        throw std::out_of_range("Timestamp out of range");
-
+    ensureRandDecoder();
     if (!rand_decoder)
         throw std::runtime_error("Random-access decoder not initialized");
 
@@ -470,10 +479,13 @@ torch::Tensor VideoReader::frameAt(double timestamp_seconds)
     const double half = 0.5 * ((properties.fps > 0) ? 1.0 / properties.fps : 0.0);
     int safety = 0, cap = static_cast<int>(properties.fps * 3) + 16;
 
+    // Allocate buffer once outside the loop
+    torch::Tensor buf = makeLikeOutputTensor();
+
     while (true)
     {
         double ts = 0.0;
-        torch::Tensor buf = makeLikeOutputTensor();
+        // torch::Tensor buf = makeLikeOutputTensor(); // Moved outside
 
         bool ok;
         {
@@ -712,6 +724,11 @@ int VideoReader::length() const
 
 torch::ScalarType VideoReader::findTypeFromBitDepth()
 {
+    if (force_8bit || libyuv_enabled)
+    {
+        CELUX_DEBUG("Forcing tensor data type to torch::kUInt8 (force_8bit={} or libyuv_enabled={})", force_8bit, libyuv_enabled);
+        return torch::kUInt8;
+    }
     int bit_depth = decoder->getBitDepth();
     CELUX_INFO("Bit depth of video: {}", bit_depth);
     torch::ScalarType torchDataType;
@@ -773,4 +790,19 @@ VideoReader::createEncoder(const std::string& outputPath) const
         /* audioSampleRate*/ asr,
         /* audioChannels  */ ach,
         /* audioCodec     */ acodec);
+}
+
+void VideoReader::set_libyuv_enabled(bool enabled)
+{
+    libyuv_enabled = enabled;
+    if (decoder)
+        decoder->setLibyuvEnabled(enabled);
+    if (rand_decoder)
+        rand_decoder->setLibyuvEnabled(enabled);
+}
+
+std::string VideoReader::getPixelFormat() const
+{
+    const char* name = av_get_pix_fmt_name(properties.pixelFormat);
+    return name ? std::string(name) : "Unknown";
 }

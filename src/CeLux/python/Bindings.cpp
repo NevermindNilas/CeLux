@@ -31,63 +31,35 @@ PYBIND11_MODULE(_celux, m)
           py::arg("level"));
     // ---------- VideoReader -----------
     py::class_<VideoReader, std::shared_ptr<VideoReader>>(m, "VideoReader")
-        .def(py::init<const std::string&, int>(), py::arg("input_path"),
+        .def(py::init<const std::string&, int, bool>(), py::arg("input_path"),
              py::arg("num_threads") =
                  static_cast<int>(std::thread::hardware_concurrency() / 2),
+             py::arg("force_8bit") = false,
              "Open a video file for reading.")
         .def("read_frame", &VideoReader::readFrame,
              "Decode and return the next frame as a H×W×3 uint8 tensor.")
         .def_property_readonly("properties", &VideoReader::getProperties)
-        .def_property_readonly("properties",
-                               &VideoReader::getProperties) // Keep full dict access
-        .def_property_readonly("width", [](const VideoReader& self)
-                               { return self.getProperties()["width"].cast<int>(); })
-        .def_property_readonly("height", [](const VideoReader& self)
-                               { return self.getProperties()["height"].cast<int>(); })
-        .def_property_readonly("fps", [](const VideoReader& self)
-                               { return self.getProperties()["fps"].cast<double>(); })
-        .def_property_readonly(
-            "min_fps", [](const VideoReader& self)
-            { return self.getProperties()["min_fps"].cast<double>(); })
-        .def_property_readonly(
-            "max_fps", [](const VideoReader& self)
-            { return self.getProperties()["max_fps"].cast<double>(); })
-        .def_property_readonly(
-            "duration", [](const VideoReader& self)
-            { return self.getProperties()["duration"].cast<double>(); })
-        .def_property_readonly(
-            "total_frames", [](const VideoReader& self)
-            { return self.getProperties()["total_frames"].cast<int>(); })
-        .def_property_readonly(
-            "pixel_format", [](const VideoReader& self)
-            { return self.getProperties()["pixel_format"].cast<std::string>(); })
-        .def_property_readonly(
-            "has_audio", [](const VideoReader& self)
-            { return self.getProperties()["has_audio"].cast<bool>(); })
-        .def_property_readonly(
-            "audio_bitrate", [](const VideoReader& self)
-            { return self.getProperties()["audio_bitrate"].cast<int>(); })
-        .def_property_readonly(
-            "audio_channels", [](const VideoReader& self)
-            { return self.getProperties()["audio_channels"].cast<int>(); })
-        .def_property_readonly(
-            "audio_sample_rate", [](const VideoReader& self)
-            { return self.getProperties()["audio_sample_rate"].cast<int>(); })
-        .def_property_readonly(
-            "audio_codec", [](const VideoReader& self)
-            { return self.getProperties()["audio_codec"].cast<std::string>(); })
-        .def_property_readonly(
-            "bit_depth", [](const VideoReader& self)
-            { return self.getProperties()["bit_depth"].cast<int>(); })
-        .def_property_readonly(
-            "aspect_ratio", [](const VideoReader& self)
-            { return self.getProperties()["aspect_ratio"].cast<double>(); })
-        .def_property_readonly(
-            "codec", [](const VideoReader& self)
-            { return self.getProperties()["codec"].cast<std::string>(); })
+        .def_property_readonly("width", &VideoReader::getWidth)
+        .def_property_readonly("height", &VideoReader::getHeight)
+        .def_property_readonly("fps", &VideoReader::getFps)
+        .def_property_readonly("min_fps", &VideoReader::getMinFps)
+        .def_property_readonly("max_fps", &VideoReader::getMaxFps)
+        .def_property_readonly("duration", &VideoReader::getDuration)
+        .def_property_readonly("total_frames", &VideoReader::getTotalFrames)
+        .def_property_readonly("pixel_format", &VideoReader::getPixelFormat)
+        .def_property_readonly("has_audio", &VideoReader::getHasAudio)
+        .def_property_readonly("audio_bitrate", &VideoReader::getAudioBitrate)
+        .def_property_readonly("audio_channels", &VideoReader::getAudioChannels)
+        .def_property_readonly("audio_sample_rate", &VideoReader::getAudioSampleRate)
+        .def_property_readonly("audio_codec", &VideoReader::getAudioCodec)
+        .def_property_readonly("bit_depth", &VideoReader::getBitDepth)
+        .def_property_readonly("aspect_ratio", &VideoReader::getAspectRatio)
+        .def_property_readonly("codec", &VideoReader::getCodec)
         .def_property_readonly("audio", &VideoReader::getAudio)
         .def("supported_codecs", &VideoReader::supportedCodecs)
         .def("get_properties", &VideoReader::getProperties)
+        .def("set_libyuv_enabled", &VideoReader::set_libyuv_enabled,
+             "Enable or disable libyuv acceleration (default: True).")
         .def("create_encoder", &VideoReader::createEncoder, py::arg("output_path"),
              "Create a celux::VideoEncoder configured to this reader's video + audio "
              "settings.")

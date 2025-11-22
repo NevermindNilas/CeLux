@@ -39,7 +39,7 @@ endif()
 # --- Dependencies ---
 find_package(spdlog CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
-find_package(libyuv CONFIG REQUIRED)
+find_package(libyuv REQUIRED)
 
 # Support both exported names (fmt changed the hyphen/underscore in some builds)
 if(TARGET fmt::fmt-header-only)
@@ -57,6 +57,7 @@ if(DEFINED ENV{VCPKG_ROOT} AND DEFINED VCPKG_TARGET_TRIPLET)
   message(STATUS "Appending vcpkg FFmpeg module path: ${_vcpkg_ffmpeg_mod}")
   list(APPEND CMAKE_MODULE_PATH "${_vcpkg_ffmpeg_mod}")
 endif()
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(FFMPEG REQUIRED COMPONENTS avcodec avformat avutil avfilter
                                   swscale swresample avdevice)

@@ -7,7 +7,7 @@ name = "celux"
 version = "0.7.4"
 readme = "README.md"
 authors = [
-    {name = "Trenton Flanagan", email = "spigonvids@gmail.com"},
+    {name = "Nilas Tiago", email = "nilascontact@gmail.com"},
 ]
 description = "Lightspeed video decoding directly into tensors!"
 requires-python = ">=3.13"
@@ -21,11 +21,11 @@ classifiers = [
 keywords = ["ffmpeg", "video", "ml", "pytorch", "decode", "tensors", "inference"]
 
 [project.urls]
-Homepage = "https://github.com/Trentonom0r3/celux"
-Repository = "https://github.com/Trentonom0r3/celux"
-Documentation = "https://github.com/Trentonom0r3/celux/blob/master/README.md"
-Changelog = "https://github.com/Trentonom0r3/celux/blob/master/docs/CHANGELOG.md"
-Issues = "https://github.com/Trentonom0r3/celux/issues"
+Homepage = "https://github.com/NevermindNilas/celux"
+Repository = "https://github.com/NevermindNilas/celux"
+Documentation = "https://github.com/NevermindNilas/celux/blob/master/README.md"
+Changelog = "https://github.com/NevermindNilas/celux/blob/master/docs/CHANGELOG.md"
+Issues = "https://github.com/NevermindNilas/celux/issues"
 
 [tool.scikit-build]
 cmake.args = [

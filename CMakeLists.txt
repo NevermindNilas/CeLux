@@ -228,6 +228,7 @@ if(WIN32 AND CELUX_BUILD_PYTHON)
     "${VCPKG_BIN}/spdlog*.dll"
     "${VCPKG_BIN}/fmt*.dll"
     "${VCPKG_BIN}/*jpeg*.dll"
+    "${VCPKG_BIN}/dav1d.dll"
   )
   
   foreach(dll ${CELUX_DLLS})

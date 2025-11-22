@@ -212,8 +212,23 @@ void Decoder::findVideoStream()
 
 void Decoder::initCodecContext()
 {
-    const AVCodec* codec =
-        avcodec_find_decoder(formatCtx->streams[videoStreamIndex]->codecpar->codec_id);
+    const AVCodec* codec = nullptr;
+    // Prefer libdav1d or libaom-av1 for AV1 decoding if available
+    if (formatCtx->streams[videoStreamIndex]->codecpar->codec_id == AV_CODEC_ID_AV1) {
+        codec = avcodec_find_decoder_by_name("libdav1d");
+        if (codec) {
+            CELUX_INFO("Using libdav1d for AV1 decoding");
+        } else {
+            codec = avcodec_find_decoder_by_name("libaom-av1");
+            if (codec) {
+                CELUX_INFO("Using libaom-av1 for AV1 decoding");
+            }
+        }
+    }
+
+    if (!codec) {
+        codec = avcodec_find_decoder(formatCtx->streams[videoStreamIndex]->codecpar->codec_id);
+    }
     
 
     CELUX_DEBUG("BASE DECODER: Initializing codec context");
@@ -242,17 +257,51 @@ void Decoder::initCodecContext()
     CELUX_DEBUG("BASE DECODER: Codec parameters copied to codec context");
 
     codecCtx->thread_count = numThreads;
+    // Force single thread for AV1 as it can be unstable with multithreading in some builds
+    if (codecCtx->codec_id == AV_CODEC_ID_AV1) {
+        CELUX_INFO("Forcing thread_count=1 for AV1");
+        codecCtx->thread_count = 1;
+    }
+
     codecCtx->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
     CELUX_DEBUG("BASE DECODER: Codec context threading configured: thread_count={}, "
                 "thread_type={}",
                 codecCtx->thread_count, codecCtx->thread_type);
     codecCtx->time_base = formatCtx->streams[videoStreamIndex]->time_base;
+
+    // Allow experimental compliance (needed for some AV1 implementations)
+    codecCtx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
+    
+    // Set get_format callback to handle pixel format negotiation
+    // This is critical for codecs like AV1 that may try hardware acceleration first
+    codecCtx->get_format = [](AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts) -> AVPixelFormat {
+        const enum AVPixelFormat *p;
+
+        // Log all available formats
+        for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
+            CELUX_DEBUG("Available pixel format: {}", av_get_pix_fmt_name(*p));
+        }
+
+        // Prefer software-decoded formats that our converter can handle
+        for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
+            // Skip hardware formats
+            const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
+            if (desc && !(desc->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
+                CELUX_DEBUG("Selected pixel format: {}", av_get_pix_fmt_name(*p));
+                return *p;
+            }
+        }
+        CELUX_WARN("No suitable software pixel format found!");
+        return AV_PIX_FMT_NONE;
+    };
+    
     // Open codec
     FF_CHECK_MSG(avcodec_open2(codecCtx.get(), codec, nullptr),
                  std::string("Failed to open codec:"));
 
     CELUX_DEBUG("BASE DECODER: Codec opened successfully");
 }
+
 
 // Decoder.cpp
 

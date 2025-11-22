@@ -1,13 +1,12 @@
 ## 📈 Changelog
 ### **Version 0.7.4 (2025-08-20)**
-- Adjusted `__getitem__` to use proper decoder dynamically. Should make it easier to use in pipelines.
-- Installed and tests `wsl` and linux version of `CeLux`, worked for me. Hopefully Updates properly.
-- **Enhanced 10-bit Support**: Implemented robust 10-bit YUV (I010) to RGB conversion using `libyuv`.
-  - Includes a fallback pipeline (`I010` -> `I420` -> `RGB`) for compatibility.
-- **Libyuv Integration**: 
-  - `libyuv` is now prioritized for color conversion when enabled.
-  - Output is automatically normalized to 8-bit (`uint8`) when using `libyuv`, ensuring consistent behavior.
-- **Fixes**: Resolved build issues related to missing `libyuv` symbols.
+- **Added:** Improved AV1 decoding that prefers `libdav1d` when available, with safe fallbacks to other software decoders. Installer/CMake now packages FFmpeg runtime DLLs (including `dav1d.dll`) into the Windows wheel so `import celux` works out-of-the-box. Added `vcpkg` recipe guidance and updated `setup_dev.ps1` to include `ffmpeg[dav1d]` for developer environments. Tests: added/updated manual AV1 test files (`tests/data/sample_av1.mp4`) and improved logging for diagnostics.
+- **Changed:** Decoder negotiation now prefers software-friendly pixel formats to avoid selecting unsupported hardware formats that could cause "Function not implemented" errors. `__getitem__` was adjusted to choose the appropriate decoder dynamically, improving pipeline interoperability.
+- **Enhanced:** Robust 10-bit YUV (I010) → RGB conversion via `libyuv`, with a compatibility fallback pipeline (`I010` → `I420` → `RGB`).
+- **Libyuv Integration:** When enabled, `libyuv` is prioritized for color conversions and automatically normalizes outputs to 8-bit (`uint8`) for consistent downstream behavior.
+- **Fixed:** Resolved build issues related to missing `libyuv` symbols and other packaging/runtime problems affecting Windows imports.
+- **Notes:** If `libdav1d` is not present, CeLux will attempt other AV1 decoders (e.g., `libaom-av1`), but `libdav1d` is recommended for best performance and compatibility.
+
 
 ### **Version 0.7.3 (2025-08-17)**
 ### Added

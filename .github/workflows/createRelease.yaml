@@ -227,38 +227,33 @@ jobs:
           body:  Automated CI build & wheel
           artifacts: 'dist/*.whl'
 #
-  #pypi-publish:
-  #  needs: release
-  #  runs-on: ubuntu-latest
-  #  if: github.ref == 'refs/heads/master'
-  #  steps:
-  #    - name: Download Linux wheels
-  #      uses: actions/download-artifact@v4
-  #      with:
-  #        name: linux-wheel-Release
-  #        path: dist
-#
-  #    - name: Download Windows wheels
-  #      uses: actions/download-artifact@v4
-  #      with:
-  #        name: windows-wheel-Release
-  #        path: dist
-#
-  #    - name: Flatten wheels into top-level dist/
-  #      run: |
-  #        mkdir -p upload
-  #        find dist -type f -name '*.whl' -exec mv -t upload {} +
-  #        # include sdist if you start building it:
-  #        find dist -type f -name '*.tar.gz' -exec mv -t upload {} + || true
-  #        rm -rf dist
-  #        mv upload dist
-  #        ls -l dist
-#
-  #    - name: Publish to PyPI
-  #      uses: pypa/gh-action-pypi-publish@v1.4.2
-  #      with:
-  #        user: __token__
-  #        password: ${{ secrets.PYPI_TOKEN }}
-  #        skip_existing: true
-  #        packages_dir: dist
-#
+  pypi-publish:
+    needs: release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    environment:
+      name: pypi
+      url: https://pypi.org/p/celux
+    permissions:
+      id-token: write 
+    steps:
+      - name: Download Windows wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-wheel-Release
+          path: dist
+
+      - name: Flatten wheels into top-level dist/
+        run: |
+          mkdir -p upload
+          find dist -type f -name '*.whl' -exec mv -t upload {} +
+          find dist -type f -name '*.tar.gz' -exec mv -t upload {} + || true
+          rm -rf dist
+          mv upload dist
+          ls -l dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          skip-existing: true

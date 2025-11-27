@@ -3,8 +3,8 @@ requires = ["scikit-build-core", "pybind11", "wheel"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "celux"
-version = "0.7.5"
+name = "nelux"
+version = "0.1.0"
 readme = "README.md"
 authors = [
     {name = "Nilas Tiago", email = "nilascontact@gmail.com"},
@@ -21,11 +21,11 @@ classifiers = [
 keywords = ["ffmpeg", "video", "ml", "pytorch", "decode", "tensors", "inference"]
 
 [project.urls]
-Homepage = "https://github.com/NevermindNilas/celux"
-Repository = "https://github.com/NevermindNilas/celux"
-Documentation = "https://github.com/NevermindNilas/celux/blob/master/README.md"
-Changelog = "https://github.com/NevermindNilas/celux/blob/master/docs/CHANGELOG.md"
-Issues = "https://github.com/NevermindNilas/celux/issues"
+Homepage = "https://github.com/NevermindNilas/CeLux"
+Repository = "https://github.com/NevermindNilas/CeLux"
+Documentation = "https://github.com/NevermindNilas/CeLux/blob/master/README.md"
+Changelog = "https://github.com/NevermindNilas/CeLux/blob/master/docs/CHANGELOG.md"
+Issues = "https://github.com/NevermindNilas/CeLux/issues"
 
 [tool.scikit-build]
 cmake.args = [

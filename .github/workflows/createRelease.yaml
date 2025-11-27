@@ -233,7 +233,7 @@ jobs:
     if: github.ref == 'refs/heads/master'
     environment:
       name: pypi
-      url: https://pypi.org/p/celux
+      url: https://pypi.org/p/nelux
     permissions:
       id-token: write 
     steps:

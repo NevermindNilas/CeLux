@@ -1,4 +1,12 @@
 ## 📈 Changelog
+### **Version 0.7.6 (2025-11-27)**
+- **Changed:** Package renamed to `nelux` on PyPI for independent publishing. Import remains `import celux`.
+- **Fixed:** Internal version now correctly reports `0.7.6`.
+- **Maintenance:** Updated repository URLs to point to NevermindNilas/CeLux.
+
+### **Version 0.7.5 (2025-11-27)**
+- **Changed:** Initial PyPI release under new package name `nelux`.
+
 ### **Version 0.7.4 (2025-08-20)**
 - **Added:** Improved AV1 decoding that prefers `libdav1d` when available, with safe fallbacks to other software decoders. Installer/CMake now packages FFmpeg runtime DLLs (including `dav1d.dll`) into the Windows wheel so `import celux` works out-of-the-box. Added `vcpkg` recipe guidance and updated `setup_dev.ps1` to include `ffmpeg[dav1d]` for developer environments. Tests: added/updated manual AV1 test files (`tests/data/sample_av1.mp4`) and improved logging for diagnostics.
 - **Changed:** Decoder negotiation now prefers software-friendly pixel formats to avoid selecting unsupported hardware formats that could cause "Function not implemented" errors. `__getitem__` was adjusted to choose the appropriate decoder dynamically, improving pipeline interoperability.

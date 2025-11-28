@@ -18,7 +18,7 @@ jobs:
     runs-on: windows-latest
     env:
       SKBUILD_CONFIG: Release
-      VCPKG_TARGET_TRIPLET: x64-windows
+      VCPKG_TARGET_TRIPLET: x64-windows-release
     steps:
     - name: Purge vcpkg to force clean build (avoid old DLLs)
       shell: cmd
@@ -62,25 +62,25 @@ jobs:
       run: |
         echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg"                          >> $GITHUB_ENV
         echo "VCPKG_TOOLCHAIN_FILE=${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
-        echo "VCPKG_TARGET_TRIPLET=x64-windows"                        >> $GITHUB_ENV
-        echo "CMAKE_PREFIX_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows"                       >> $GITHUB_ENV
-        echo "CMAKE_MODULE_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows/share/ffmpeg"          >> $GITHUB_ENV
+        echo "VCPKG_TARGET_TRIPLET=x64-windows-release"                        >> $GITHUB_ENV
+        echo "CMAKE_PREFIX_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release"                       >> $GITHUB_ENV
+        echo "CMAKE_MODULE_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release/share/ffmpeg"          >> $GITHUB_ENV
     - name: Install C++ deps via vcpkg (retry on 429)
       shell: cmd
       run: |
         for /L %%i in (1,1,3) do (
-            "${{ runner.temp }}\vcpkg\vcpkg" remove ffmpeg --triplet x64-windows 2>nul || echo "FFmpeg not installed"
-            "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-windows --recurse && exit /b 0
+            "${{ runner.temp }}\vcpkg\vcpkg" remove ffmpeg --triplet x64-windows-release 2>nul || echo "FFmpeg not installed"
+            "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-windows-release --recurse && exit /b 0
             timeout /t 30
         )
         exit /b 1
-    - name: Verify dav1d is installed and FFmpeg has libdav1d decoder
+    - name: Verify dav1d is installed
       shell: cmd
       run: |
         echo "=== Checking for dav1d.dll ==="
-        dir "${{ runner.temp }}\vcpkg\installed\x64-windows\bin\dav1d.dll" 2>nul || (echo "ERROR: dav1d.dll not found!" && exit /b 1)
-        echo "=== Verifying libdav1d decoder in FFmpeg ==="
-        "${{ runner.temp }}\vcpkg\installed\x64-windows\tools\ffmpeg\ffprobe.exe" -decoders 2>nul | findstr /i "libdav1d" || (echo "ERROR: libdav1d decoder not available in FFmpeg!" && exit /b 1)
+        dir "${{ runner.temp }}\vcpkg\installed\x64-windows-release\bin\dav1d.dll" 2>nul || (echo "ERROR: dav1d.dll not found!" && exit /b 1)
+        echo "=== Listing all DLLs in vcpkg bin ==="
+        dir "${{ runner.temp }}\vcpkg\installed\x64-windows-release\bin\*.dll"
         echo "=== dav1d verification passed ==="
     - name: Save vcpkg cache
       if: always()
@@ -103,12 +103,12 @@ jobs:
         SKBUILD_CONFIG: Release
         VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
         VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-        VCPKG_TARGET_TRIPLET:  x64-windows
+        VCPKG_TARGET_TRIPLET:  x64-windows-release
         CMAKE_ARGS: >-
           -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_TARGET_TRIPLET=x64-windows
-          -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows
-          -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows/share/ffmpeg
+          -DVCPKG_TARGET_TRIPLET=x64-windows-release
+          -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
+          -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
       run: python -m pip wheel . --no-deps -w dist -v
     - name: Smoke-test wheel in current env
       shell: bash

@@ -12,7 +12,7 @@ jobs:
     runs-on: windows-latest
     env:
       SKBUILD_CONFIG: Release
-      VCPKG_TARGET_TRIPLET: x64-windows
+      VCPKG_TARGET_TRIPLET: x64-windows-release
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -49,14 +49,14 @@ jobs:
     - name: Install C++ deps via vcpkg
       shell: cmd
       run: |
-        "${{ runner.temp }}\vcpkg\vcpkg" remove ffmpeg --triplet x64-windows 2>nul || echo "FFmpeg not installed, skipping removal"
-        "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-windows --recurse
+        "${{ runner.temp }}\vcpkg\vcpkg" remove ffmpeg --triplet x64-windows-release 2>nul || echo "FFmpeg not installed, skipping removal"
+        "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-windows-release --recurse
 
     - name: Verify dav1d is installed
       shell: cmd
       run: |
         echo "=== Checking for dav1d.dll ==="
-        dir "${{ runner.temp }}\vcpkg\installed\x64-windows\bin\dav1d.dll" 2>nul || (echo "ERROR: dav1d.dll not found!" && exit /b 1)
+        dir "${{ runner.temp }}\vcpkg\installed\x64-windows-release\bin\dav1d.dll" 2>nul || (echo "ERROR: dav1d.dll not found!" && exit /b 1)
         echo "=== dav1d verification passed ==="
 
     - name: Build Windows wheel
@@ -66,12 +66,12 @@ jobs:
         SKBUILD_CONFIG: Release
         VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
         VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-        VCPKG_TARGET_TRIPLET:  x64-windows
+        VCPKG_TARGET_TRIPLET:  x64-windows-release
         CMAKE_ARGS: >-
           -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_TARGET_TRIPLET=x64-windows
-          -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows
-          -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows/share/ffmpeg
+          -DVCPKG_TARGET_TRIPLET=x64-windows-release
+          -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
+          -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
       run: python -m pip wheel . --no-deps -w dist -v
 
     - name: Upload Windows wheel

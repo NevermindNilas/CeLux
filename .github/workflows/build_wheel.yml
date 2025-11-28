@@ -46,6 +46,21 @@ jobs:
         }
         & "${{ runner.temp }}/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
 
+    - name: Update vcpkg ports
+      shell: cmd
+      run: |
+        cd "${{ runner.temp }}\vcpkg"
+        git pull
+
+    - name: Set VCPKG env vars
+      shell: bash
+      run: |
+        echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg"                          >> $GITHUB_ENV
+        echo "VCPKG_TOOLCHAIN_FILE=${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+        echo "VCPKG_TARGET_TRIPLET=x64-windows-release"                        >> $GITHUB_ENV
+        echo "CMAKE_PREFIX_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release"                       >> $GITHUB_ENV
+        echo "CMAKE_MODULE_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release/share/ffmpeg"          >> $GITHUB_ENV
+
     - name: Install C++ deps via vcpkg
       shell: cmd
       run: |
@@ -73,6 +88,16 @@ jobs:
           -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
           -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
       run: python -m pip wheel . --no-deps -w dist -v
+
+    - name: Verify dav1d.dll is bundled in wheel
+      shell: bash
+      run: |
+        echo "=== Checking for dav1d.dll in wheel ==="
+        unzip -l dist/*.whl | grep -i dav1d || (echo "ERROR: dav1d.dll not bundled in wheel!" && exit 1)
+        echo "=== dav1d.dll is bundled ==="
+
+    - name: List final wheel contents
+      run: unzip -l dist/*.whl | grep celux/
 
     - name: Upload Windows wheel
       uses: actions/upload-artifact@v4

@@ -1,4 +1,10 @@
 ## 📈 Changelog
+### **Version 0.7.7 (2025-11-28)**
+- **Fixed:** AV1 decoding failing with "Your platform doesn't support hardware accelerated AV1 decoding" error. The decoder now properly tries software decoders (`libdav1d`, `libaom-av1`) before falling back to FFmpeg's internal `av1` decoder.
+- **Fixed:** Pixel format negotiation improved to prefer software-friendly formats and avoid hardware-only formats that cause "Failed to get pixel format" errors.
+- **Enhanced:** Added explicit hardware acceleration disable options when opening AV1 codec to ensure software decoding path is used.
+- **Enhanced:** Better logging during pixel format negotiation to aid debugging.
+
 ### **Version 0.7.6 (2025-11-27)**
 - **Changed:** Package renamed to `nelux` on PyPI for independent publishing. Import remains `import celux`.
 - **Fixed:** Internal version now correctly reports `0.7.6`.

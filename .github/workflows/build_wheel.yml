@@ -49,7 +49,8 @@ jobs:
     - name: Install C++ deps via vcpkg
       shell: cmd
       run: |
-        "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-windows --recurse
+        "${{ runner.temp }}\vcpkg\vcpkg" remove ffmpeg --triplet x64-windows 2>nul || echo "FFmpeg not installed, skipping removal"
+        "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-windows --recurse
 
     - name: Build Windows wheel
       shell: bash
@@ -120,7 +121,7 @@ jobs:
   #              git clone https://github.com/microsoft/vcpkg /opt/vcpkg
   #          fi
   #          /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-  #          /opt/vcpkg/vcpkg install spdlog fmt ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
+  #          /opt/vcpkg/vcpkg install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
   #        CIBW_BEFORE_BUILD_LINUX: |
   #          python -m pip install -U pip wheel setuptools
   #          python -m pip install --only-binary=:all: "pybind11>=2.11"

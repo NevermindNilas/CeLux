@@ -213,21 +213,39 @@ void Decoder::findVideoStream()
 void Decoder::initCodecContext()
 {
     const AVCodec* codec = nullptr;
-    // Prefer libdav1d or libaom-av1 for AV1 decoding if available
-    if (formatCtx->streams[videoStreamIndex]->codecpar->codec_id == AV_CODEC_ID_AV1) {
-        codec = avcodec_find_decoder_by_name("libdav1d");
-        if (codec) {
-            CELUX_INFO("Using libdav1d for AV1 decoding");
-        } else {
-            codec = avcodec_find_decoder_by_name("libaom-av1");
+    AVCodecID codec_id = formatCtx->streams[videoStreamIndex]->codecpar->codec_id;
+    
+    // For AV1, we MUST use a software decoder to avoid hardware acceleration issues
+    // The built-in "av1" decoder tries hardware first and fails on unsupported platforms
+    if (codec_id == AV_CODEC_ID_AV1) {
+        // Try software decoders in order of preference
+        const char* av1_decoders[] = {
+            "libdav1d",    // Best performance, most compatible
+            "libaom-av1",  // Reference implementation, slower but reliable
+            "av1",         // FFmpeg's internal decoder (last resort)
+            nullptr
+        };
+        
+        for (int i = 0; av1_decoders[i] != nullptr && !codec; ++i) {
+            codec = avcodec_find_decoder_by_name(av1_decoders[i]);
             if (codec) {
-                CELUX_INFO("Using libaom-av1 for AV1 decoding");
+                CELUX_INFO("Using {} for AV1 decoding", av1_decoders[i]);
+            }
+        }
+        
+        if (!codec) {
+            // Final fallback: try generic lookup but warn user
+            codec = avcodec_find_decoder(codec_id);
+            if (codec) {
+                CELUX_WARN("No preferred AV1 software decoder found, using: {}. "
+                          "Consider installing libdav1d for better AV1 support.", 
+                          codec->name);
             }
         }
     }
 
     if (!codec) {
-        codec = avcodec_find_decoder(formatCtx->streams[videoStreamIndex]->codecpar->codec_id);
+        codec = avcodec_find_decoder(codec_id);
     }
     
 
@@ -277,27 +295,83 @@ void Decoder::initCodecContext()
     codecCtx->get_format = [](AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts) -> AVPixelFormat {
         const enum AVPixelFormat *p;
 
-        // Log all available formats
+        // Log all available formats for debugging
+        CELUX_DEBUG("Pixel format negotiation - available formats:");
         for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
-            CELUX_DEBUG("Available pixel format: {}", av_get_pix_fmt_name(*p));
+            const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
+            bool is_hw = desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL);
+            CELUX_DEBUG("  - {} ({})", av_get_pix_fmt_name(*p), is_hw ? "hardware" : "software");
         }
 
-        // Prefer software-decoded formats that our converter can handle
+        // First pass: prefer common software-decoded YUV formats that our converter handles well
+        static const AVPixelFormat preferred_formats[] = {
+            AV_PIX_FMT_YUV420P,
+            AV_PIX_FMT_YUV420P10LE,
+            AV_PIX_FMT_YUV420P10BE,
+            AV_PIX_FMT_YUV422P,
+            AV_PIX_FMT_YUV422P10LE,
+            AV_PIX_FMT_YUV444P,
+            AV_PIX_FMT_YUV444P10LE,
+            AV_PIX_FMT_NV12,
+            AV_PIX_FMT_P010LE,
+            AV_PIX_FMT_GBRP,
+            AV_PIX_FMT_RGB24,
+            AV_PIX_FMT_BGR24,
+            AV_PIX_FMT_NONE
+        };
+        
+        for (int i = 0; preferred_formats[i] != AV_PIX_FMT_NONE; i++) {
+            for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
+                if (*p == preferred_formats[i]) {
+                    CELUX_INFO("Selected preferred pixel format: {}", av_get_pix_fmt_name(*p));
+                    return *p;
+                }
+            }
+        }
+
+        // Second pass: accept any software format
         for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
-            // Skip hardware formats
             const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
             if (desc && !(desc->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
-                CELUX_DEBUG("Selected pixel format: {}", av_get_pix_fmt_name(*p));
+                CELUX_INFO("Selected software pixel format: {}", av_get_pix_fmt_name(*p));
                 return *p;
             }
         }
-        CELUX_WARN("No suitable software pixel format found!");
+        
+        // Last resort: return the first format even if it's hardware
+        // This allows FFmpeg to potentially handle it
+        if (*pix_fmts != AV_PIX_FMT_NONE) {
+            CELUX_WARN("No software pixel format available, using first available: {}", 
+                      av_get_pix_fmt_name(*pix_fmts));
+            return *pix_fmts;
+        }
+        
+        CELUX_ERROR("No suitable pixel format found!");
         return AV_PIX_FMT_NONE;
     };
     
-    // Open codec
-    FF_CHECK_MSG(avcodec_open2(codecCtx.get(), codec, nullptr),
-                 std::string("Failed to open codec:"));
+    // Create codec options dictionary
+    AVDictionary* opts = nullptr;
+    
+    // For AV1 specifically, set options to prefer software decoding
+    if (codec_id == AV_CODEC_ID_AV1) {
+        // Disable any hardware device selection
+        av_dict_set(&opts, "hwaccel", "none", 0);
+        // Request software-only decoding
+        av_dict_set(&opts, "threads", "1", 0);
+        CELUX_DEBUG("AV1 decoder options set to prefer software decoding");
+    }
+    
+    // Open codec with options
+    int ret = avcodec_open2(codecCtx.get(), codec, &opts);
+    av_dict_free(&opts);
+    
+    if (ret < 0) {
+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+        CELUX_ERROR("Failed to open codec: {}", errbuf);
+        throw CxException(std::string("Failed to open codec: ") + errbuf);
+    }
 
     CELUX_DEBUG("BASE DECODER: Codec opened successfully");
 }

@@ -1,4 +1,8 @@
 ## 📈 Changelog
+### **Version 0.7.9 (2025-11-28)**
+- **Added:** GitHub Actions CI now builds FFmpeg with `dav1d` support for AV1 decoding.
+
+
 ### **Version 0.7.8 (2025-11-28)**
 - **Fixed:** GitHub Actions CI now properly builds FFmpeg with `dav1d` support for AV1 decoding.
 - **Changed:** CI workflows now only trigger on tags or manual dispatch, not on every commit.

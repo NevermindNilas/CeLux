@@ -10,7 +10,7 @@ namespace py = pybind11;
 PYBIND11_MODULE(_celux, m)
 {
     m.doc() = "celux – lightspeed video decoding into tensors";
-     m.attr("__version__") = "0.7.8"; 
+     m.attr("__version__") = "0.7.9"; 
     m.attr("__all__") = py::make_tuple(
         "__version__",
         "VideoReader",

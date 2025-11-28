@@ -1,4 +1,8 @@
 ## 📈 Changelog
+### **Version 0.7.8 (2025-11-28)**
+- **Fixed:** GitHub Actions CI now properly builds FFmpeg with `dav1d` support for AV1 decoding.
+- **Changed:** CI workflows now only trigger on tags or manual dispatch, not on every commit.
+
 ### **Version 0.7.7 (2025-11-28)**
 - **Fixed:** AV1 decoding failing with "Your platform doesn't support hardware accelerated AV1 decoding" error. The decoder now properly tries software decoders (`libdav1d`, `libaom-av1`) before falling back to FFmpeg's internal `av1` decoder.
 - **Fixed:** Pixel format negotiation improved to prefer software-friendly formats and avoid hardware-only formats that cause "Failed to get pixel format" errors.

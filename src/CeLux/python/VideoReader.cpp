@@ -4,6 +4,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <torch/torch.h> // Ensure you have included the necessary Torch headers
+#include <cstring> // For std::memcpy
 
 namespace py = pybind11;
 #define CHECK_TENSOR(tensor)                                                  \
@@ -236,10 +237,11 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
 {
     if (!t.defined() || t.numel() == 0)
     {
-        // Return empty tensor/array based on backend
+        // Return empty tensor/array based on backend with proper shape
         if (backend == Backend::NumPy)
         {
-            return py::array();
+            // Return an empty numpy array with the expected shape (0, width, 3)
+            return py::array(py::dtype::of<uint8_t>(), {0, properties.width, 3});
         }
         return py::cast(torch::Tensor());
     }
@@ -261,13 +263,13 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
             numpy_dtype = py::dtype::of<int16_t>();
             break;
         case torch::kUInt16:
-            numpy_dtype = py::dtype("uint16");
+            numpy_dtype = py::dtype::of<uint16_t>();
             break;
         case torch::kInt32:
             numpy_dtype = py::dtype::of<int32_t>();
             break;
         case torch::kUInt32:
-            numpy_dtype = py::dtype("uint32");
+            numpy_dtype = py::dtype::of<uint32_t>();
             break;
         case torch::kFloat32:
             numpy_dtype = py::dtype::of<float>();
@@ -295,8 +297,12 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
             strides.push_back(stride * element_size);
         }
 
-        // Create numpy array from tensor data (this will copy the data)
-        return py::array(numpy_dtype, shape, strides, cpu_tensor.data_ptr());
+        // Create numpy array that owns its own data by allocating and copying
+        // This ensures memory safety since the tensor buffer may be reused
+        py::array result(numpy_dtype, shape);
+        std::memcpy(result.mutable_data(), cpu_tensor.data_ptr(), 
+                    cpu_tensor.numel() * element_size);
+        return result;
     }
 
     // Default: return as torch::Tensor

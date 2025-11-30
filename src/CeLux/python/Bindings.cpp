@@ -7,6 +7,24 @@
 namespace py = pybind11;
 #define PYBIND11_DETAILED_ERROR_MESSAGES
 
+// Helper function to convert string to Backend enum
+Backend backendFromString(const std::string& backend_str)
+{
+    if (backend_str == "pytorch")
+    {
+        return Backend::PyTorch;
+    }
+    else if (backend_str == "numpy")
+    {
+        return Backend::NumPy;
+    }
+    else
+    {
+        throw std::invalid_argument(
+            "Invalid backend: '" + backend_str + "'. Must be 'pytorch' or 'numpy'.");
+    }
+}
+
 PYBIND11_MODULE(_celux, m)
 {
     m.doc() = "celux – lightspeed video decoding into tensors";
@@ -31,13 +49,26 @@ PYBIND11_MODULE(_celux, m)
           py::arg("level"));
     // ---------- VideoReader -----------
     py::class_<VideoReader, std::shared_ptr<VideoReader>>(m, "VideoReader")
-        .def(py::init<const std::string&, int, bool>(), py::arg("input_path"),
+        .def(py::init([](const std::string& input_path, int num_threads, bool force_8bit, const std::string& backend) {
+            return std::make_shared<VideoReader>(input_path, num_threads, force_8bit, backendFromString(backend));
+        }),
+             py::arg("input_path"),
              py::arg("num_threads") =
                  static_cast<int>(std::thread::hardware_concurrency() / 2),
              py::arg("force_8bit") = false,
-             "Open a video file for reading.")
+             py::arg("backend") = "pytorch",
+             R"doc(Open a video file for reading.
+
+Args:
+    input_path (str): Path to the video file.
+    num_threads (int, optional): Number of threads for decoding. Defaults to half CPU cores.
+    force_8bit (bool, optional): Force 8-bit output regardless of source bit depth. Defaults to False.
+    backend (str, optional): Output backend type. Either "pytorch" (default) or "numpy".
+        - "pytorch": Returns frames as torch.Tensor
+        - "numpy": Returns frames as numpy.ndarray (preserving dtype, e.g., uint8)
+)doc")
         .def("read_frame", &VideoReader::readFrame,
-             "Decode and return the next frame as a H×W×3 uint8 tensor.")
+             "Decode and return the next frame as a H×W×3 array (tensor or ndarray based on backend).")
         .def_property_readonly("properties", &VideoReader::getProperties)
         .def_property_readonly("width", &VideoReader::getWidth)
         .def_property_readonly("height", &VideoReader::getHeight)

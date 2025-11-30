@@ -1,6 +1,8 @@
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 import os
 import torch
+import numpy as np
+from numpy.typing import NDArray
 from enum import Enum
 
 class LogLevel(Enum):
@@ -69,14 +71,28 @@ class Audio:
 class VideoReader:
     """
     Read video frames and audio from a file.
+    
+    Supports two backends for frame output:
+    - "pytorch" (default): Returns frames as torch.Tensor
+    - "numpy": Returns frames as numpy.ndarray
     """
-    def __init__(self, input_path: str, num_threads: int = os.cpu_count() // 2) -> None:
+    def __init__(
+        self,
+        input_path: str,
+        num_threads: int = os.cpu_count() // 2,
+        force_8bit: bool = False,
+        backend: Literal["pytorch", "numpy"] = "pytorch",
+    ) -> None:
         """
         Open a video file for reading.
 
         Args:
             input_path (str): Path to the video file.
             num_threads (int, optional): Number of threads for decoding. Defaults to half CPU cores.
+            force_8bit (bool, optional): Force 8-bit output regardless of source bit depth. Defaults to False.
+            backend (str, optional): Output backend type. Either "pytorch" (default) or "numpy".
+                - "pytorch": Returns frames as torch.Tensor
+                - "numpy": Returns frames as numpy.ndarray (preserving dtype, e.g., uint8)
         """
         ...
 
@@ -120,9 +136,14 @@ class VideoReader:
         """Access the Audio helper object."""
         ...
 
-    def read_frame(self) -> torch.Tensor:
+    def read_frame(self) -> Union[torch.Tensor, NDArray]:
         """
-        Decode and return the next frame as a 3-channel, HWC uint8 tensor.
+        Decode and return the next frame as a 3-channel, HWC array.
+        
+        Returns:
+            Union[torch.Tensor, numpy.ndarray]: The decoded frame.
+                - If backend="pytorch": returns torch.Tensor
+                - If backend="numpy": returns numpy.ndarray
         """
         ...
 
@@ -146,12 +167,15 @@ class VideoReader:
         """Number of frames in the reader (after range)."""
         ...
 
-    def __getitem__(self, index: Union[int, float]) -> torch.Tensor:
+    def __getitem__(self, index: Union[int, float]) -> Union[torch.Tensor, NDArray]:
         """
         Seek and return a single frame by index or timestamp.
 
         Args:
             index (int|float): Frame number or timestamp (s).
+            
+        Returns:
+            Union[torch.Tensor, numpy.ndarray]: The decoded frame based on backend setting.
         """
         ...
 
@@ -159,8 +183,13 @@ class VideoReader:
         """Return self as an iterator over frames."""
         ...
 
-    def __next__(self) -> torch.Tensor:
-        """Return the next frame in iteration."""
+    def __next__(self) -> Union[torch.Tensor, NDArray]:
+        """
+        Return the next frame in iteration.
+        
+        Returns:
+            Union[torch.Tensor, numpy.ndarray]: The decoded frame based on backend setting.
+        """
         ...
 
     def supported_codecs(self) -> List[str]:
@@ -179,7 +208,7 @@ class VideoReader:
         Returns:
             VideoEncoder: Configured encoder instance.
         """
-    def frame_at(self, pos: Union[int, float]) -> torch.Tensor:
+    def frame_at(self, pos: Union[int, float]) -> Union[torch.Tensor, NDArray]:
         """
         Retrieves a frame at the given frame idx or timestamp without affecting the main decoder loop.
 
@@ -187,7 +216,7 @@ class VideoReader:
             pos (int|float): Frame index or timestamp (s).
 
         Returns:
-            torch.Tensor : The decoded video frame.
+            Union[torch.Tensor, numpy.ndarray]: The decoded video frame based on backend setting.
         """
         ...
 

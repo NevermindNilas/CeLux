@@ -4,9 +4,19 @@
 #include "Decoder.hpp" // Ensure this includes the Filter class
 #include "Factory.hpp"
 #include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
 #include <VideoEncoder.hpp>
 
 namespace py = pybind11;
+
+/**
+ * @brief Enum representing the output backend type.
+ */
+enum class Backend
+{
+    PyTorch, // Return frames as torch::Tensor (default)
+    NumPy    // Return frames as numpy.ndarray
+};
 
 class VideoReader
 {
@@ -16,11 +26,13 @@ class VideoReader
      *
      * @param filePath Path to the input video file.
      * @param numThreads Number of threads to use for decoding.
-     * @param device Processing device ("cpu" or "cuda").
+     * @param force_8bit Force 8-bit output regardless of source bit depth.
+     * @param backend Output backend type ("pytorch" or "numpy"). Default is "pytorch".
      */
     VideoReader(const std::string& filePath,
                 int numThreads = static_cast<int>(std::thread::hardware_concurrency() / 2),
-                bool force_8bit = false);
+                bool force_8bit = false,
+                Backend backend = Backend::PyTorch);
 
     /**
      * @brief Destructor for VideoReader.
@@ -65,11 +77,18 @@ class VideoReader
      * @brief Read a frame from the video.
      *
      * Depending on the configuration, returns either a torch::Tensor or a
-     * py::array<uint8_t>. Shape is always HWC.
+     * numpy.ndarray. Shape is always HWC.
      *
-     * @return torch::Tensor The next frame as torch::Tensor.
+     * @return py::object The next frame (torch::Tensor or numpy.ndarray based on backend).
      */
-    torch::Tensor readFrame();
+    py::object readFrame();
+
+    /**
+     * @brief Internal method to decode the next frame into the internal tensor buffer.
+     *
+     * @return torch::Tensor The decoded frame as torch::Tensor (internal use).
+     */
+    torch::Tensor decodeFrame();
 
     /**
      * @brief Seek to a specific timestamp in the video.
@@ -191,25 +210,21 @@ class VideoReader
     std::shared_ptr<Audio> getAudio();
     /**
      * @brief Get the frame at (or immediately after) a timestamp, in seconds.
-     *        SIDE EFFECT: This will seek the main decoder (disturbs sequential
-     * iteration).
+     *        Uses a secondary decoder; does not disturb sequential iteration.
      * @param timestamp_seconds Timestamp in seconds (0 <= t <= duration).
-     * @return torch::Tensor HWC tensor (dtype matches bit depth). Returns an owned
-     * clone.
+     * @return py::object HWC frame (torch::Tensor or numpy.ndarray based on backend).
      * @throws std::out_of_range on invalid timestamp, std::runtime_error on failure.
      */
-    torch::Tensor frameAt(double timestamp_seconds);
+    py::object frameAt(double timestamp_seconds);
 
     /**
      * @brief Get the frame at (or immediately after) a frame index.
-     *        SIDE EFFECT: This will seek the main decoder (disturbs sequential
-     * iteration).
+     *        Uses a secondary decoder; does not disturb sequential iteration.
      * @param frame_index 0-based frame index (0 <= idx < total_frames).
-     * @return torch::Tensor HWC tensor (dtype matches bit depth). Returns an owned
-     * clone.
+     * @return py::object HWC frame (torch::Tensor or numpy.ndarray based on backend).
      * @throws std::out_of_range on invalid index, std::runtime_error on failure.
      */
-    torch::Tensor frameAt(int frame_index);
+    py::object frameAt(int frame_index);
 
     /**
      * @brief Enable or disable libyuv acceleration.
@@ -223,8 +238,9 @@ class VideoReader
 
     /**
      * @brief Iterator support: returns next frame or throws StopIteration.
+     * @return py::object HWC frame (torch::Tensor or numpy.ndarray based on backend).
      */
-    torch::Tensor next();
+    py::object next();
 
     /**
      * @brief Context manager enter.
@@ -257,6 +273,30 @@ class VideoReader
      */
     void close();
 
+    /**
+     * @brief Convert a torch::Tensor to a py::object based on the backend setting.
+     *
+     * @param t The torch::Tensor to convert.
+     * @return py::object Either the tensor or a numpy array.
+     */
+    py::object tensorToOutput(const torch::Tensor& t) const;
+
+    /**
+     * @brief Internal method to decode frame at timestamp using rand_decoder.
+     *
+     * @param timestamp_seconds Timestamp in seconds.
+     * @return torch::Tensor The decoded frame.
+     */
+    torch::Tensor decodeFrameAt(double timestamp_seconds);
+
+    /**
+     * @brief Internal method to decode frame at index using rand_decoder.
+     *
+     * @param frame_index Frame index.
+     * @return torch::Tensor The decoded frame.
+     */
+    torch::Tensor decodeFrameAt(int frame_index);
+
     // Member variables
     std::shared_ptr<celux::Decoder> decoder;
     celux::Decoder::VideoProperties properties;
@@ -284,6 +324,7 @@ class VideoReader
     int numThreads;
     bool libyuv_enabled = true;
     bool force_8bit = false;
+    Backend backend = Backend::PyTorch; // Output backend selection
 };
 
 #endif // VIDEOREADER_HPP

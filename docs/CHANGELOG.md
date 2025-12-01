@@ -1,6 +1,18 @@
 ## 📈 Changelog
 ### **Version 0.7.9 (2025-11-28)**
-- **Added:** GitHub Actions CI now builds FFmpeg with `dav1d` support for AV1 decoding.
+
+- **Added:** `numpy` backend for `VideoReader`.
+  - You can now open a reader with `VideoReader(path, backend="numpy")` to receive
+    frames as `numpy.ndarray` (H×W×C). The `numpy` backend preserves the source
+    dtype (e.g. `uint8` for 8-bit sources, `uint16` for higher bit depths).
+  - The existing default backend remains `pytorch` and continues to return
+    `torch.Tensor` objects (`H×W×C`). The `backend` argument accepts the
+    values `"pytorch"` and `"numpy"`.
+  - Rationale: this provides a zero-surprise path for users working with NumPy
+    / OpenCV workflows without requiring conversions from Torch tensors.
+  - Note: Performance characteristics vary by workload — the `pytorch` backend
+    is optimized for tensor-based ML pipelines, while the `numpy` backend avoids
+    torch-related overhead when downstream consumers expect NumPy arrays.
 
 
 ### **Version 0.7.8 (2025-11-28)**

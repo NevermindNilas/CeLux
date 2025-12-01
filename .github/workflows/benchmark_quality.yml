@@ -1,10 +1,6 @@
 name: Quality Benchmark
 
 on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
   workflow_dispatch:
 
 env:

@@ -212,12 +212,23 @@ endif()
 
 if(WIN32 AND CELUX_BUILD_PYTHON)
   # DLL copy logic for Windows only
+  # Use VCPKG_TARGET_TRIPLET env var if set (e.g., x64-windows-release), otherwise default to x64-windows
+  if(DEFINED ENV{VCPKG_TARGET_TRIPLET})
+    set(_vcpkg_triplet "$ENV{VCPKG_TARGET_TRIPLET}")
+  else()
+    set(_vcpkg_triplet "x64-windows")
+  endif()
+  
   if(DEFINED ENV{VCPKG_ROOT})
     file(TO_CMAKE_PATH "$ENV{VCPKG_ROOT}" _vcpkg_root_cmake)
-    set(VCPKG_BIN "${_vcpkg_root_cmake}/installed/x64-windows/bin")
+    set(VCPKG_BIN "${_vcpkg_root_cmake}/installed/${_vcpkg_triplet}/bin")
   else()
-    set(VCPKG_BIN "${CMAKE_SOURCE_DIR}/vcpkg/installed/x64-windows/bin")
+    set(VCPKG_BIN "${CMAKE_SOURCE_DIR}/vcpkg/installed/${_vcpkg_triplet}/bin")
   endif()
+  
+  message(STATUS "VCPKG_BIN path for DLLs: ${VCPKG_BIN}")
+  message(STATUS "Using triplet: ${_vcpkg_triplet}")
+  
   set(CELUX_DLL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/celux")
   file(GLOB CELUX_DLLS
     "${VCPKG_BIN}/av*.dll"
@@ -231,6 +242,8 @@ if(WIN32 AND CELUX_BUILD_PYTHON)
     "${VCPKG_BIN}/*jpeg*.dll"
     "${VCPKG_BIN}/dav1d.dll"
   )
+  
+  message(STATUS "Found ${CMAKE_CURRENT_LIST_DIR} DLLs to bundle: ${CELUX_DLLS}")
   
   foreach(dll ${CELUX_DLLS})
     add_custom_command(TARGET celux POST_BUILD

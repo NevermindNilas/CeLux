@@ -259,6 +259,9 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
         case torch::kUInt8:
             numpy_dtype = py::dtype::of<uint8_t>();
             break;
+        case torch::kInt8:
+            numpy_dtype = py::dtype::of<int8_t>();
+            break;
         case torch::kInt16:
             numpy_dtype = py::dtype::of<int16_t>();
             break;
@@ -271,6 +274,9 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
         case torch::kUInt32:
             numpy_dtype = py::dtype::of<uint32_t>();
             break;
+        case torch::kInt64:
+            numpy_dtype = py::dtype::of<int64_t>();
+            break;
         case torch::kFloat32:
             numpy_dtype = py::dtype::of<float>();
             break;
@@ -278,6 +284,7 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
             numpy_dtype = py::dtype::of<double>();
             break;
         default:
+            CELUX_WARN("Unhandled torch dtype {}, defaulting to uint8", static_cast<int>(cpu_tensor.scalar_type()));
             numpy_dtype = py::dtype::of<uint8_t>();
             break;
         }
@@ -289,19 +296,11 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
             shape.push_back(static_cast<py::ssize_t>(dim));
         }
 
-        // Get strides in bytes
-        std::vector<py::ssize_t> strides;
-        py::ssize_t element_size = cpu_tensor.element_size();
-        for (int64_t stride : cpu_tensor.strides())
-        {
-            strides.push_back(stride * element_size);
-        }
-
         // Create numpy array that owns its own data by allocating and copying
         // This ensures memory safety since the tensor buffer may be reused
         py::array result(numpy_dtype, shape);
         std::memcpy(result.mutable_data(), cpu_tensor.data_ptr(), 
-                    cpu_tensor.numel() * element_size);
+                    cpu_tensor.numel() * cpu_tensor.element_size());
         return result;
     }
 

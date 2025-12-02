@@ -4,6 +4,11 @@
 #include <Conversion.hpp>
 #include <Frame.hpp>
 #include <torch/torch.h>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <atomic>
 
 namespace celux
 {
@@ -87,5 +92,20 @@ class Decoder
 
     bool initializeAudio();
     void closeAudio();
+
+    std::thread decodingThread;
+    std::atomic<bool> stopDecoding{false};
+    std::atomic<bool> seekRequested{false};
+    std::queue<Frame> frameQueue;
+    std::mutex queueMutex;
+    std::condition_variable queueCond;
+    std::condition_variable producerCond;
+    size_t maxQueueSize = 20;
+    bool isFinished = false;
+
+    void decodingLoop();
+    void startDecodingThread();
+    void stopDecodingThread();
+    void clearQueue();
 };
 } // namespace celux

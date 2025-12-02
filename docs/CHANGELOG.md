@@ -1,10 +1,3 @@
-## 📈 Changelog
-### **Version 0.7.9 (2025-11-28)**
-
-- **Added:** `numpy` backend for `VideoReader`.
-  - You can now open a reader with `VideoReader(path, backend="numpy")` to receive
-    frames as `numpy.ndarray` (H×W×C). The `numpy` backend preserves the source
-    dtype (e.g. `uint8` for 8-bit sources, `uint16` for higher bit depths).
   - The existing default backend remains `pytorch` and continues to return
     `torch.Tensor` objects (`H×W×C`). The `backend` argument accepts the
     values `"pytorch"` and `"numpy"`.

@@ -171,6 +171,8 @@ void Decoder::initialize(const std::string& filePath)
 
     CELUX_INFO("BASE DECODER: Decoder using codec: {}, and pixel format: {}",
                codecCtx->codec->name, av_get_pix_fmt_name(codecCtx->pix_fmt));
+
+    startDecodingThread();
 }
 
 void Decoder::openFile(const std::string& filePath)
@@ -381,84 +383,31 @@ void Decoder::initCodecContext()
 
 bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
 {
-    CELUX_TRACE("Decoding next frame");
-    int ret;
-
-    if (buffer == nullptr)
+    if (!decodingThread.joinable())
     {
-        CELUX_DEBUG("Buffer is null");
-        throw CxException("Buffer is null");
+        startDecodingThread();
     }
 
-    while (true)
+    std::unique_lock<std::mutex> lock(queueMutex);
+    queueCond.wait(lock, [this] { return !frameQueue.empty() || isFinished || stopDecoding; });
+
+    if (frameQueue.empty())
     {
-        // Attempt to receive a decoded frame
-        ret = avcodec_receive_frame(codecCtx.get(), frame.get());
-        if (ret == AVERROR(EAGAIN))
-        {
-            CELUX_DEBUG("Decoder needs more packets, reading next packet");
-        }
-        else if (ret == AVERROR_EOF)
-        {
-            CELUX_TRACE("No more frames to decode");
-            // No more frames to decode
-            return false;
-        }
-        else if (ret < 0)
-        {
-            CELUX_DEBUG("Error during decoding");
-            throw CxException("Error during decoding");
-        }
-        else
-        {
-            // Successfully received a frame
-            CELUX_DEBUG("Frame decoded successfully");
-
-        
-
-            // **Retrieve the frame timestamp**
-            if (frame_timestamp)
-            {
-                *frame_timestamp = getFrameTimestamp(frame.get());
-                CELUX_DEBUG("Frame timestamp retrieved: {}", *frame_timestamp);
-            }
-
-            converter->convert(frame, buffer);
-            CELUX_DEBUG("Frame converted");
-
-            return true;
-        }
-
-        // Read the next packet from the video file
-        ret = av_read_frame(formatCtx.get(), pkt.get());
-        if (ret == AVERROR_EOF)
-        {
-            CELUX_TRACE("End of file reached, flushing decoder");
-            // End of file: flush the decoder
-            FF_CHECK(avcodec_send_packet(codecCtx.get(), nullptr));
-        }
-        else if (ret < 0)
-        {
-            CELUX_DEBUG("Error reading frame");
-            throw CxException("Error reading frame");
-        }
-        else
-        {
-            CELUX_TRACE("Packet read from file, stream_index={}", pkt->stream_index);
-            // If the packet belongs to the video stream, send it to the decoder
-            if (pkt->stream_index == videoStreamIndex)
-            {
-                FF_CHECK(avcodec_send_packet(codecCtx.get(), pkt.get()));
-                CELUX_DEBUG("Packet sent to decoder");
-            }
-            else
-            {
-                CELUX_DEBUG("Packet does not belong to video stream, skipping");
-            }
-            // Release the packet back to FFmpeg
-            av_packet_unref(pkt.get());
-        }
+        return false;
     }
+
+    Frame frame = std::move(frameQueue.front());
+    frameQueue.pop();
+    producerCond.notify_one();
+    lock.unlock();
+
+    if (frame_timestamp)
+    {
+        *frame_timestamp = getFrameTimestamp(frame.get());
+    }
+
+    converter->convert(frame, buffer);
+    return true;
 }
 
 bool Decoder::seekFrame(int frameIndex)
@@ -479,10 +428,14 @@ bool Decoder::seekFrame(int frameIndex)
 
 bool Decoder::seek(double timestamp)
 {
+    stopDecodingThread();
+    clearQueue();
+
     CELUX_TRACE("Seeking to timestamp: {}", timestamp);
     if (timestamp < 0 || timestamp > properties.duration)
     {
         CELUX_WARN("Timestamp out of bounds: {}", timestamp);
+        startDecodingThread();
         return false;
     }
 
@@ -494,6 +447,7 @@ bool Decoder::seek(double timestamp)
     if (ret < 0)
     {
         CELUX_DEBUG("Seek failed to timestamp: {}", timestamp);
+        startDecodingThread();
         return false;
     }
 
@@ -501,6 +455,7 @@ bool Decoder::seek(double timestamp)
     avcodec_flush_buffers(codecCtx.get());
     CELUX_TRACE("Seek successful, codec buffers flushed");
 
+    startDecodingThread();
     return true;
 }
 
@@ -521,6 +476,7 @@ bool Decoder::isOpen() const
 void Decoder::close()
 {
     CELUX_DEBUG("BASE DECODER: Closing decoder");
+    stopDecodingThread();
     if (codecCtx)
     {
         codecCtx.reset();
@@ -600,10 +556,14 @@ int Decoder::getBitDepth() const
 
 bool Decoder::seekToNearestKeyframe(double timestamp)
 {
+    stopDecodingThread();
+    clearQueue();
+
     CELUX_TRACE("Seeking to the nearest keyframe for timestamp: {}", timestamp);
     if (timestamp < 0 || timestamp > properties.duration)
     {
         CELUX_WARN("Timestamp out of bounds: {}", timestamp);
+        startDecodingThread();
         return false;
     }
 
@@ -616,6 +576,7 @@ bool Decoder::seekToNearestKeyframe(double timestamp)
     if (ret < 0)
     {
         CELUX_DEBUG("Keyframe seek failed for timestamp: {}", timestamp);
+        startDecodingThread();
         return false;
     }
 
@@ -623,6 +584,7 @@ bool Decoder::seekToNearestKeyframe(double timestamp)
     avcodec_flush_buffers(codecCtx.get());
     CELUX_TRACE("Keyframe seek successful, codec buffers flushed");
 
+    startDecodingThread();
     return true;
 }
 
@@ -818,6 +780,7 @@ void Decoder::closeAudio()
 
 bool Decoder::extractAudioToFile(const std::string& outputFilePath)
 {
+    stopDecodingThread();
     CELUX_DEBUG("Starting audio extraction to file: {}", outputFilePath);
 
     if (!properties.hasAudio)
@@ -1028,6 +991,7 @@ bool Decoder::extractAudioToFile(const std::string& outputFilePath)
 
 torch::Tensor Decoder::getAudioTensor()
 {
+    stopDecodingThread();
     CELUX_DEBUG("Starting extraction of audio to torch::Tensor.");
 
     if (!properties.hasAudio)
@@ -1188,6 +1152,93 @@ void Decoder::setForce8Bit(bool enabled)
         if (autoConverter)
         {
             autoConverter->setForce8Bit(enabled);
+        }
+    }
+}
+
+void Decoder::startDecodingThread()
+{
+    if (decodingThread.joinable()) return;
+    stopDecoding = false;
+    isFinished = false;
+    seekRequested = false;
+    decodingThread = std::thread(&Decoder::decodingLoop, this);
+}
+
+void Decoder::stopDecodingThread()
+{
+    stopDecoding = true;
+    producerCond.notify_all();
+    queueCond.notify_all();
+    if (decodingThread.joinable())
+    {
+        decodingThread.join();
+    }
+    stopDecoding = false;
+}
+
+void Decoder::clearQueue()
+{
+    std::lock_guard<std::mutex> lock(queueMutex);
+    std::queue<Frame> empty;
+    std::swap(frameQueue, empty);
+    isFinished = false;
+}
+
+void Decoder::decodingLoop()
+{
+    Frame localFrame;
+    
+    while (!stopDecoding)
+    {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            producerCond.wait(lock, [this] { return frameQueue.size() < maxQueueSize || stopDecoding; });
+        }
+
+        if (stopDecoding) break;
+
+        int ret = avcodec_receive_frame(codecCtx.get(), localFrame.get());
+        
+        if (ret == 0)
+        {
+            {
+                std::unique_lock<std::mutex> lock(queueMutex);
+                frameQueue.push(localFrame);
+                queueCond.notify_one();
+            }
+            av_frame_unref(localFrame.get());
+            continue;
+        }
+        
+        if (ret == AVERROR_EOF)
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            isFinished = true;
+            queueCond.notify_all();
+            break;
+        }
+        
+        if (ret != AVERROR(EAGAIN))
+        {
+            CELUX_WARN("Error receiving frame: {}", ret);
+            break; 
+        }
+
+        if (av_read_frame(formatCtx.get(), pkt.get()) >= 0)
+        {
+            if (pkt->stream_index == videoStreamIndex)
+            {
+                if (avcodec_send_packet(codecCtx.get(), pkt.get()) < 0)
+                {
+                    CELUX_WARN("Error sending packet to decoder");
+                }
+            }
+            av_packet_unref(pkt.get());
+        }
+        else
+        {
+            avcodec_send_packet(codecCtx.get(), nullptr);
         }
     }
 }

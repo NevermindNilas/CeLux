@@ -1,11 +1,9 @@
 [![Release and Benchmark Tests](https://github.com/Trentonom0r3/CeLux/actions/workflows/createRelease.yaml/badge.svg)](https://github.com/Trentonom0r3/CeLux/actions/workflows/createRelease.yaml)
 [![License](https://img.shields.io/badge/license-AGPL%203.0-blue.svg)](https://github.com/Trentonom0r3/CeLux/blob/master/LICENSE)
-[![PyPI Version](https://img.shields.io/pypi/v/celux)](https://pypi.org/project/celux/)
-[![PyPI - Downloads](https://img.shields.io/pypi/dm/celux)](https://pypi.org/project/celux/)
-[![Python Versions](https://img.shields.io/pypi/pyversions/celux)](https://pypi.org/project/celux/)
+[![PyPI Version](https://img.shields.io/pypi/v/nelux)](https://pypi.org/project/nelux/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/nelux)](https://pypi.org/project/nelux/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/nelux)](https://pypi.org/project/nelux/)
 [![Discord](https://img.shields.io/discord/1041502781808328704.svg?label=Join%20Us%20on%20Discord&logo=discord&colorB=7289da)](https://discord.gg/hFSHjGyp4p)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-coff.ee%2Fspigonvidsu-yellow.svg?logo=buy-me-a-coffee&logoColor=white)](https://coff.ee/spigonvidsu)
-
 # CeLux
 
 Originally created by [Trentonom0r3](https://github.com/Trentonom0r3)
@@ -13,17 +11,6 @@ Originally created by [Trentonom0r3](https://github.com/Trentonom0r3)
 **CeLux** is a high‑performance Python library for video processing, leveraging the power of libav(FFmpeg). It delivers some of the fastest decode times for full‑HD videos globally, enabling efficient video decoding directly into PyTorch tensors—and now simplified, one‑call audio muxing straight from a tensor. At present, CeLux offers ***limited, but functional*** encoding support.
 
 The name **CeLux** comes from the Latin words _celer_ (speed) and _lux_ (light), reflecting its commitment to speed and efficiency.
-
-# [Check out the latest changes](https://github.com/Trentonom0r3/CeLux/blob/master/docs/CHANGELOG.md#version-073)
-## [0.7.3] - 2025-08-17
-### Added
-- New `VideoReader.frame_at(pos)` method for random access:
-  - Pass a **float** for timestamp in seconds.
-  - Pass an **int** for frame index (0-based).
-- Uses a separate decoder internally, so sequential iteration (`read_frame`, `__iter__`) isn’t interrupted.
-- Returns HWC tensors with the same dtype rules as 0.7.2:
-  - `uint8` for 8-bit sources
-  - `uint16` for 10-bit and higher
 
 ### Example
 ```python

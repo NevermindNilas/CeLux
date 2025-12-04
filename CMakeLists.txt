@@ -1,13 +1,15 @@
 cmake_minimum_required(VERSION 3.23)
 project(CeLux VERSION 1.0 LANGUAGES CXX)
-# ─── MSVC: enforce UTF-8, suppress size_t→int & illegal-char warnings, silence external headers ───
+
+# ─── Compiler options ─── 
+# Note: These apply to CXX compiler only. CUDA compiler options are set separately.
 if (MSVC)
   add_compile_options(
-    /utf-8                   # treat all .cpp/.hpp as UTF-8 (kills C4828)
-    /wd4267                  # disable C4267: conversion from 'size_t' to 'int'
-    /wd4828                  # disable C4828: illegal character in source
-    /external:anglebrackets  # mark <> includes as “external”
-    /external:W0             # suppress all warnings in external headers
+    $<$<COMPILE_LANGUAGE:CXX>:/utf-8>                   # treat all .cpp/.hpp as UTF-8 (kills C4828)
+    $<$<COMPILE_LANGUAGE:CXX>:/wd4267>                  # disable C4267: conversion from 'size_t' to 'int'
+    $<$<COMPILE_LANGUAGE:CXX>:/wd4828>                  # disable C4828: illegal character in source
+    $<$<COMPILE_LANGUAGE:CXX>:/external:anglebrackets>  # mark <> includes as "external"
+    $<$<COMPILE_LANGUAGE:CXX>:/external:W0>             # suppress all warnings in external headers
   )
 endif()
 
@@ -24,6 +26,25 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(CELUX_ENABLE_CUDA   "Enable CUDA support in CeLux" OFF)
 option(CELUX_BUILD_PYTHON "Build Python bindings"     ON)
+
+# --- Enable CUDA language if requested ---
+if(CELUX_ENABLE_CUDA)
+  include(CheckLanguage)
+  check_language(CUDA)
+  if(CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    message(STATUS "CUDA enabled: ${CMAKE_CUDA_COMPILER}")
+    message(STATUS "CUDA Toolkit: ${CUDAToolkit_VERSION}")
+    # Set CUDA architectures for common GPUs (can be overridden)
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+      set(CMAKE_CUDA_ARCHITECTURES "60;70;75;80;86;89;90" CACHE STRING "CUDA architectures")
+    endif()
+  else()
+    message(WARNING "CELUX_ENABLE_CUDA is ON but no CUDA compiler found. CUDA features disabled.")
+    set(CELUX_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA support in CeLux" FORCE)
+  endif()
+endif()
 
 # --- Compiler cache (ccache) ---
 find_program(CCACHE_PROGRAM ccache)
@@ -129,19 +150,64 @@ file(GLOB_RECURSE CELUX_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/CeLux/backends/*.cpp
 )
 
+# Add CUDA sources if CUDA is enabled  
+if(CELUX_ENABLE_CUDA)
+  # Add only the CUDA cpp files to main sources, but NOT the .cu files
+  file(GLOB CELUX_CUDA_CPP_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CeLux/backends/cuda/*.cpp
+  )
+  list(APPEND CELUX_SOURCES ${CELUX_CUDA_CPP_SOURCES})
+  
+  # Create a separate CUDA library for .cu files
+  file(GLOB CELUX_CUDA_CU_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/CeLux/backends/cuda/*.cu
+  )
+  
+  if(CELUX_CUDA_CU_SOURCES)
+    add_library(CeLuxCuda STATIC ${CELUX_CUDA_CU_SOURCES})
+    set_target_properties(CeLuxCuda PROPERTIES
+      CUDA_SEPARABLE_COMPILATION OFF
+      POSITION_INDEPENDENT_CODE ON
+      CUDA_STANDARD 17
+      CUDA_RUNTIME_LIBRARY Shared
+    )
+    target_include_directories(CeLuxCuda PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/backends
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/backends/cuda
+    )
+    target_compile_definitions(CeLuxCuda PUBLIC CELUX_ENABLE_CUDA)
+    # Do NOT link CUDA::cudart here - let the runtime be resolved at link time
+    message(STATUS "CUDA .cu sources: ${CELUX_CUDA_CU_SOURCES}")
+  endif()
+  
+  message(STATUS "CUDA .cpp sources: ${CELUX_CUDA_CPP_SOURCES}")
+endif()
+
 add_library(CeLuxLib STATIC ${CELUX_SOURCES})
+
+# Link CUDA library if enabled
+if(CELUX_ENABLE_CUDA)
+  target_compile_definitions(CeLuxLib PUBLIC CELUX_ENABLE_CUDA)
+  if(TARGET CeLuxCuda)
+    target_link_libraries(CeLuxLib PUBLIC CeLuxCuda)
+  endif()
+endif()
 
 target_include_directories(CeLuxLib
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/backends>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/backends/cuda>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/python>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/conversion>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/conversion/cpu>
     $<INSTALL_INTERFACE:include>
     ${CELUX_FFMPEG_INCS}
     $<$<BOOL:${CELUX_BUILD_PYTHON}>:${Python3_INCLUDE_DIRS}>
+    $<$<BOOL:${CELUX_ENABLE_CUDA}>:${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}>
 )
 
 target_link_libraries(CeLuxLib PUBLIC
@@ -153,6 +219,8 @@ target_link_libraries(CeLuxLib PUBLIC
   $<$<BOOL:${CELUX_BUILD_PYTHON}>:c10>
   $<$<BOOL:${CELUX_BUILD_PYTHON}>:torch>
   $<$<BOOL:${CELUX_BUILD_PYTHON}>:torch_python>
+  $<$<AND:$<BOOL:${CELUX_BUILD_PYTHON}>,$<BOOL:${CELUX_ENABLE_CUDA}>>:torch_cuda>
+  $<$<AND:$<BOOL:${CELUX_BUILD_PYTHON}>,$<BOOL:${CELUX_ENABLE_CUDA}>>:c10_cuda>
 )
 if(WIN32)
   target_link_libraries(CeLuxLib PUBLIC ws2_32 bcrypt)
@@ -179,6 +247,8 @@ if(CELUX_BUILD_PYTHON)
     $<$<BOOL:${CELUX_BUILD_PYTHON}>:c10>
     $<$<BOOL:${CELUX_BUILD_PYTHON}>:torch>
     $<$<BOOL:${CELUX_BUILD_PYTHON}>:torch_python>
+    $<$<AND:$<BOOL:${CELUX_BUILD_PYTHON}>,$<BOOL:${CELUX_ENABLE_CUDA}>>:torch_cuda>
+    $<$<AND:$<BOOL:${CELUX_BUILD_PYTHON}>,$<BOOL:${CELUX_ENABLE_CUDA}>>:c10_cuda>
   )
 
   set_target_properties(celux PROPERTIES

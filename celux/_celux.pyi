@@ -14,7 +14,6 @@ class LogLevel(Enum):
     critical = 5
     off = 6
 
-
 def set_log_level(level: LogLevel) -> None:
     """
     Set the logging level for CeLux.
@@ -23,7 +22,6 @@ def set_log_level(level: LogLevel) -> None:
         level (LogLevel): The logging level to set.
     """
     ...
-
 
 class Audio:
     """
@@ -67,14 +65,17 @@ class Audio:
         """Audio codec name."""
         ...
 
-
 class VideoReader:
     """
     Read video frames and audio from a file.
-    
+
     Supports two backends for frame output:
     - "pytorch" (default): Returns frames as torch.Tensor
     - "numpy": Returns frames as numpy.ndarray
+
+    Supports two decode accelerators:
+    - "cpu" (default): Software decoding on CPU
+    - "nvdec": NVIDIA hardware decoding via NVDEC (requires NVIDIA GPU)
     """
     def __init__(
         self,
@@ -82,6 +83,8 @@ class VideoReader:
         num_threads: int = os.cpu_count() // 2,
         force_8bit: bool = False,
         backend: Literal["pytorch", "numpy"] = "pytorch",
+        decode_accelerator: Literal["cpu", "nvdec"] = "cpu",
+        cuda_device_index: int = 0,
     ) -> None:
         """
         Open a video file for reading.
@@ -93,6 +96,10 @@ class VideoReader:
             backend (str, optional): Output backend type. Either "pytorch" (default) or "numpy".
                 - "pytorch": Returns frames as torch.Tensor
                 - "numpy": Returns frames as numpy.ndarray (preserving dtype, e.g., uint8)
+            decode_accelerator (str, optional): Decode acceleration type. Either "cpu" (default) or "nvdec".
+                - "cpu": Software decoding on CPU (default)
+                - "nvdec": NVIDIA hardware decoding via NVDEC. Frames remain on GPU as CUDA tensors.
+            cuda_device_index (int, optional): CUDA device index for NVDEC. Defaults to 0.
         """
         ...
 
@@ -139,7 +146,7 @@ class VideoReader:
     def read_frame(self) -> Union[torch.Tensor, NDArray]:
         """
         Decode and return the next frame as a 3-channel, HWC array.
-        
+
         Returns:
             Union[torch.Tensor, numpy.ndarray]: The decoded frame.
                 - If backend="pytorch": returns torch.Tensor
@@ -173,7 +180,7 @@ class VideoReader:
 
         Args:
             index (int|float): Frame number or timestamp (s).
-            
+
         Returns:
             Union[torch.Tensor, numpy.ndarray]: The decoded frame based on backend setting.
         """
@@ -186,7 +193,7 @@ class VideoReader:
     def __next__(self) -> Union[torch.Tensor, NDArray]:
         """
         Return the next frame in iteration.
-        
+
         Returns:
             Union[torch.Tensor, numpy.ndarray]: The decoded frame based on backend setting.
         """
@@ -219,7 +226,6 @@ class VideoReader:
             Union[torch.Tensor, numpy.ndarray]: The decoded video frame based on backend setting.
         """
         ...
-
 
 class VideoEncoder:
     """
@@ -261,12 +267,8 @@ class VideoEncoder:
         """
         ...
 
-    def __enter__(self) -> "VideoEncoder":
-        ...
-
-    def __exit__(
-        self, exc_type, exc_val, exc_tb
-    ) -> bool:
+    def __enter__(self) -> "VideoEncoder": ...
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         """
         Close encoder on exit from context.
         """

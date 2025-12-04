@@ -3,6 +3,8 @@
 #define FACTORY_HPP
 
 #include <Decoders.hpp>
+#include <string>
+#include <stdexcept>
 
 using ConverterKey = std::tuple<bool, AVPixelFormat>;
 
@@ -20,6 +22,31 @@ namespace celux
 {
 
 /**
+ * @brief Enumeration for decode acceleration options
+ */
+enum class DecodeAccelerator
+{
+    CPU,    ///< Software decoding on CPU (default)
+    NVDEC   ///< NVIDIA hardware decoding via NVDEC
+};
+
+/**
+ * @brief Convert string to DecodeAccelerator enum
+ * @param str String representation ("cpu" or "nvdec")
+ * @return DecodeAccelerator enum value
+ */
+inline DecodeAccelerator stringToDecodeAccelerator(const std::string& str)
+{
+    if (str == "cpu" || str == "CPU")
+        return DecodeAccelerator::CPU;
+    else if (str == "nvdec" || str == "NVDEC" || str == "cuda" || str == "CUDA")
+        return DecodeAccelerator::NVDEC;
+    else
+        throw std::invalid_argument("Unknown decode_accelerator: " + str + 
+                                    ". Valid options: 'cpu', 'nvdec'");
+}
+
+/**
  * @brief Factory class to create Decoders, Encoders, and Converters based on backend
  * and configuration.
  */
@@ -29,18 +56,49 @@ class Factory
     /**
      * @brief Creates a Decoder instance based on the specified backend.
      *
-     * @param backend Backend type (CPU or CUDA).
+     * @param device Torch device (CPU or CUDA).
      * @param filename Path to the video file.
-     * @param converter Unique pointer to the IConverter instance.
-     * @return std::unique_ptr<Decoder> Pointer to the created Decoder.
+     * @param numThreads Number of threads for decoding.
+     * @param accelerator Decode acceleration type (CPU or NVDEC).
+     * @param cudaDeviceIndex CUDA device index (only used if accelerator is NVDEC).
+     * @return std::shared_ptr<Decoder> Pointer to the created Decoder.
      */
     static std::shared_ptr<Decoder>
-    createDecoder(torch::Device device, const std::string& filename, int numThreads
-                  )
+    createDecoder(torch::Device device, const std::string& filename, int numThreads,
+                  DecodeAccelerator accelerator = DecodeAccelerator::CPU,
+                  int cudaDeviceIndex = 0)
     {
+        switch (accelerator)
+        {
+            case DecodeAccelerator::CPU:
+                return std::make_shared<celux::backends::cpu::Decoder>(filename, numThreads);
+            
+            case DecodeAccelerator::NVDEC:
+#ifdef CELUX_ENABLE_CUDA
+                return std::make_shared<celux::backends::cuda::Decoder>(filename, numThreads, cudaDeviceIndex);
+#else
+                throw std::runtime_error(
+                    "NVDEC acceleration requested but CeLux was not built with CUDA support. "
+                    "Rebuild with -DCELUX_ENABLE_CUDA=ON to enable NVDEC.");
+#endif
+            
+            default:
+                throw std::invalid_argument("Unknown decode accelerator");
+        }
+    }
 
-        return std::make_shared<celux::backends::cpu::Decoder>(filename, numThreads
-                                                               );
+    /**
+     * @brief Creates a Decoder instance based on the specified backend (legacy overload).
+     *
+     * @param device Torch device (CPU or CUDA).
+     * @param filename Path to the video file.
+     * @param numThreads Number of threads for decoding.
+     * @return std::shared_ptr<Decoder> Pointer to the created Decoder.
+     */
+    static std::shared_ptr<Decoder>
+    createDecoder(torch::Device device, const std::string& filename, int numThreads)
+    {
+        return createDecoder(device, filename, numThreads, DecodeAccelerator::CPU, 0);
     }
 
    

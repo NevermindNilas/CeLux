@@ -28,7 +28,7 @@ Backend backendFromString(const std::string& backend_str)
 PYBIND11_MODULE(_celux, m)
 {
     m.doc() = "celux – lightspeed video decoding into tensors";
-     m.attr("__version__") = "0.7.9"; 
+     m.attr("__version__") = "0.8.0"; 
     m.attr("__all__") = py::make_tuple(
         "__version__",
         "VideoReader",
@@ -49,14 +49,20 @@ PYBIND11_MODULE(_celux, m)
           py::arg("level"));
     // ---------- VideoReader -----------
     py::class_<VideoReader, std::shared_ptr<VideoReader>>(m, "VideoReader")
-        .def(py::init([](const std::string& input_path, int num_threads, bool force_8bit, const std::string& backend) {
-            return std::make_shared<VideoReader>(input_path, num_threads, force_8bit, backendFromString(backend));
+        .def(py::init([](const std::string& input_path, int num_threads, bool force_8bit, 
+                        const std::string& backend, const std::string& decode_accelerator,
+                        int cuda_device_index) {
+            return std::make_shared<VideoReader>(input_path, num_threads, force_8bit, 
+                                                 backendFromString(backend),
+                                                 decode_accelerator, cuda_device_index);
         }),
              py::arg("input_path"),
              py::arg("num_threads") =
                  static_cast<int>(std::thread::hardware_concurrency() / 2),
              py::arg("force_8bit") = false,
              py::arg("backend") = "pytorch",
+             py::arg("decode_accelerator") = "cpu",
+             py::arg("cuda_device_index") = 0,
              R"doc(Open a video file for reading.
 
 Args:
@@ -66,6 +72,10 @@ Args:
     backend (str, optional): Output backend type. Either "pytorch" (default) or "numpy".
         - "pytorch": Returns frames as torch.Tensor
         - "numpy": Returns frames as numpy.ndarray (preserving dtype, e.g., uint8)
+    decode_accelerator (str, optional): Decode acceleration type. Either "cpu" (default) or "nvdec".
+        - "cpu": Software decoding on CPU (default)
+        - "nvdec": NVIDIA hardware decoding via NVDEC. Frames remain on GPU as CUDA tensors.
+    cuda_device_index (int, optional): CUDA device index for NVDEC. Defaults to 0.
 )doc")
         .def("read_frame", &VideoReader::readFrame,
              "Decode and return the next frame as a H×W×3 array (tensor or ndarray based on backend).")

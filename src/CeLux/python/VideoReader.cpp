@@ -13,12 +13,16 @@ namespace py = pybind11;
 		throw std::runtime_error("Invalid tensor: undefined or empty");        \
 	}
 
-VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force_8bit, Backend backend)
+VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force_8bit, Backend backend,
+                         const std::string& decode_accelerator, int cuda_device_index)
     : decoder(nullptr), rand_decoder(nullptr), currentIndex(0), start_frame(0),
       end_frame(-1), start_time(-1.0), end_time(-1.0), filePath(filePath),
-      numThreads(numThreads), force_8bit(force_8bit), backend(backend)
+      numThreads(numThreads), force_8bit(force_8bit), backend(backend),
+      decodeAccelerator(celux::stringToDecodeAccelerator(decode_accelerator)),
+      cudaDeviceIndex(cuda_device_index)
 {
-    CELUX_INFO("VideoReader constructor called with filePath: {}", filePath);
+    CELUX_INFO("VideoReader constructor called with filePath: {}, decode_accelerator: {}", 
+               filePath, decode_accelerator);
 
     if (numThreads > std::thread::hardware_concurrency())
         throw std::invalid_argument(
@@ -26,16 +30,18 @@ VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force
 
     try
     {
-        torch::Device torchDevice = torch::Device(torch::kCPU);
+        // Determine the torch device based on decode accelerator
+        torch::Device torchDevice = (decodeAccelerator == celux::DecodeAccelerator::NVDEC) 
+                                    ? torch::Device(torch::kCUDA, cuda_device_index)
+                                    : torch::Device(torch::kCPU);
 
         // Main sequential decoder
-        decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads);
+        decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
+                                                decodeAccelerator, cuda_device_index);
         decoder->setForce8Bit(force_8bit);
-        CELUX_INFO("Main decoder created successfully");
+        CELUX_INFO("Main decoder created successfully with accelerator: {}", decode_accelerator);
 
         // Random-access decoder is now lazy-loaded in ensureRandDecoder()
-        // rand_decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads);
-        // CELUX_INFO("Random-access decoder created successfully");
 
         audio = std::make_shared<Audio>(decoder);
 
@@ -529,8 +535,11 @@ void VideoReader::ensureRandDecoder()
     if (!rand_decoder)
     {
         CELUX_INFO("Initializing random-access decoder (lazy load)");
-        torch::Device torchDevice = torch::Device(torch::kCPU);
-        rand_decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads);
+        torch::Device torchDevice = (decodeAccelerator == celux::DecodeAccelerator::NVDEC) 
+                                    ? torch::Device(torch::kCUDA, cudaDeviceIndex)
+                                    : torch::Device(torch::kCPU);
+        rand_decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
+                                                     decodeAccelerator, cudaDeviceIndex);
         rand_decoder->setLibyuvEnabled(libyuv_enabled);
         rand_decoder->setForce8Bit(force_8bit);
     }

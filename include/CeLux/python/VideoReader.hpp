@@ -28,11 +28,15 @@ class VideoReader
      * @param numThreads Number of threads to use for decoding.
      * @param force_8bit Force 8-bit output regardless of source bit depth.
      * @param backend Output backend type ("pytorch" or "numpy"). Default is "pytorch".
+     * @param decode_accelerator Decode acceleration type ("cpu" or "nvdec"). Default is "cpu".
+     * @param cuda_device_index CUDA device index for NVDEC (default: 0).
      */
     VideoReader(const std::string& filePath,
                 int numThreads = static_cast<int>(std::thread::hardware_concurrency() / 2),
                 bool force_8bit = false,
-                Backend backend = Backend::PyTorch);
+                Backend backend = Backend::PyTorch,
+                const std::string& decode_accelerator = "cpu",
+                int cuda_device_index = 0);
 
     /**
      * @brief Destructor for VideoReader.
@@ -325,6 +329,8 @@ class VideoReader
     bool libyuv_enabled = true;
     bool force_8bit = false;
     Backend backend = Backend::PyTorch; // Output backend selection
+    celux::DecodeAccelerator decodeAccelerator = celux::DecodeAccelerator::CPU;
+    int cudaDeviceIndex = 0;
 };
 
 #endif // VIDEOREADER_HPP

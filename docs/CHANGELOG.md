@@ -2,9 +2,60 @@
 ## 📈 Changelog
 
 ### **Version 0.8.0 (Unreleased)**
+
+#### **NVDEC Hardware Decoding (GPU-Accelerated)**
+- **Added:** Full NVDEC hardware decoding support via `decode_accelerator="nvdec"` parameter
+  - Decode video frames directly on the GPU using NVIDIA's hardware decoder
+  - Frames remain on GPU as CUDA tensors (`device='cuda'`) - zero CPU-GPU transfer overhead
+  - Supports H.264, HEVC, VP8, VP9, AV1, MPEG-1/2/4, and VC1 codecs
+  - New `cuda_device_index` parameter for multi-GPU systems
+  
+  ```python
+  # Example: GPU-accelerated decoding
+  reader = VideoReader("video.mp4", decode_accelerator="nvdec", cuda_device_index=0)
+  for frame in reader:
+      # frame is already a CUDA tensor on GPU!
+      print(frame.device)  # cuda:0
+  ```
+
+#### **Advanced CUDA Color Conversion Kernels**
+- **Added:** High-performance CUDA kernels for YUV to RGB conversion (inspired by NVIDIA Video Codec SDK)
+  - **Vectorized memory writes** using `RGB24x2` structs for 2x throughput improvement
+  - **Multiple YUV formats supported:**
+    - NV12 (8-bit 4:2:0) - NVDEC native format
+    - P016 (10/16-bit 4:2:0) - HDR content
+    - NV16 (8-bit 4:2:2) - Professional video
+    - P216 (10/16-bit 4:2:2) - Professional HDR
+    - YUV444 (8-bit 4:4:4) - High quality, no chroma subsampling
+    - YUV444P16 (16-bit 4:4:4) - Professional HDR mastering
+  - **Color space standards:** BT.601, BT.709, BT.2020, FCC, SMPTE240M
+  - **Color range support:** Limited (TV: 16-235) and Full (PC/JPEG: 0-255)
+  - **Planar RGB output** (`RGBP`) for ML workflows (CHW format)
+
+#### **HEVC 4:4:4 Decoding**
+- **Added:** Full HEVC 4:4:4 decoding support on NVIDIA Ampere+ GPUs (RTX 30xx, RTX 40xx)
+  - Automatic detection of YUV444P, YUV444P10LE, YUV444P12LE, YUV444P16LE formats
+  - Proper color space and range handling from FFmpeg metadata
+
+#### **FFmpeg Log Suppression**
+- **Added:** Custom FFmpeg log callback to suppress noisy NVDEC warnings
+  - Filters out `[hevc_cuvid @ ...] Invalid pkt_timebase` and similar messages
+  - Only shows errors and fatal messages, keeping console output clean
+
+#### ⚡ **Performance**
 - **Enhanced:** Optimized color conversion pipeline with improved `libyuv` fast path selection
   - Refactored `AutoToRGBConverter` to properly detect bit depth and route 8-bit content through optimized `libyuv` conversion paths
 - **Performance:** Significant performance improvements for 8-bit video decoding by ensuring the fast path is taken
+
+#### 🧪 **Testing**
+- **Added:** `test_cuda_color_formats.py` - Comprehensive test suite for CUDA color conversion
+  - Tests all supported pixel formats, color spaces, and ranges
+  - CPU vs CUDA performance comparison benchmarks
+  - Protected error handling to prevent crashes from stopping test suite
+- **Added:** `test_cuda_pipeline.py` - Multi-threaded CUDA pipeline stress test
+  - Simulates real-world decode → inference → encode pipeline
+  - Validates CUDA stream synchronization and thread safety
+- **Added:** `test_hevc_444.py` - HEVC 4:4:4 decoding test for Ampere+ GPUs
 
 
 ### **Version 0.7.9 (2025-11-28)**

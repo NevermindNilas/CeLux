@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "nelux"
-version = "0.8.0"
+version = "0.8.1"
 readme = "README.md"
 authors = [
     {name = "Nilas Tiago", email = "nilascontact@gmail.com"},
@@ -34,3 +34,6 @@ cmake.args = [
   "-DCMAKE_PREFIX_PATH=$ENV{VCPKG_ROOT}/installed/$ENV{VCPKG_TARGET_TRIPLET}",
   "-DCMAKE_MODULE_PATH=$ENV{VCPKG_ROOT}/installed/$ENV{VCPKG_TARGET_TRIPLET}/share/ffmpeg"
 ]
+
+[tool.scikit-build.cmake.define]
+CELUX_ENABLE_CUDA = {env="CELUX_ENABLE_CUDA", default="OFF"}

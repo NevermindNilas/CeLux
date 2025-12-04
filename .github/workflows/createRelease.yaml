@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    tags:    [ 'v*.*.*' ]
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 env:
@@ -20,205 +20,229 @@ jobs:
       SKBUILD_CONFIG: Release
       VCPKG_TARGET_TRIPLET: x64-windows-release
     steps:
-    - name: Purge vcpkg to force clean build (avoid old DLLs)
-      shell: cmd
-      run: |
-        if exist "%RUNNER_TEMP%\vcpkg" rmdir /s /q "%RUNNER_TEMP%\vcpkg"
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-    - name: Upgrade pip & install deps
-      run: |
-        python -m pip install --upgrade pip setuptools wheel
-        python -m pip install pybind11 numpy
-        python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
-    - name: Cache vcpkg build & installs
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ runner.temp }}/vcpkg
-          ${{ runner.temp }}/vcpkg/installed
-          ${{ runner.temp }}/vcpkg/archives
-        key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('vcpkg.json','vcpkg-lock.json') }}
-        restore-keys: |
-          vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
-    - name: Update vcpkg ports (safe)
-      shell: pwsh
-      run: |
-        $vcpkgDir = "${{ runner.temp }}\vcpkg"
-        if (-not (Test-Path $vcpkgDir)) {
-          Write-Host "vcpkg not found, cloning fresh"
-          git clone https://github.com/microsoft/vcpkg.git $vcpkgDir
-        } else {
-          Write-Host "Attempting safe vcpkg update: fetch + reset + clean"
-          Set-Location $vcpkgDir
-          git fetch --all --prune
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Fetch failed, removing and re-cloning vcpkg"
-            Set-Location ${{ runner.temp }}
-            Remove-Item -Recurse -Force $vcpkgDir -ErrorAction SilentlyContinue
+      - name: Purge vcpkg to force clean build (avoid old DLLs)
+        shell: cmd
+        run: |
+          if exist "%RUNNER_TEMP%\vcpkg" rmdir /s /q "%RUNNER_TEMP%\vcpkg"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Upgrade pip & install deps
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pybind11 numpy
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
+
+      - name: Cache vcpkg build & installs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg
+            ${{ runner.temp }}/vcpkg/installed
+            ${{ runner.temp }}/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('vcpkg.json','vcpkg-lock.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
+
+      - name: Update vcpkg ports (safe)
+        shell: pwsh
+        run: |
+          $vcpkgDir = "${{ runner.temp }}\vcpkg"
+          if (-not (Test-Path $vcpkgDir)) {
+            Write-Host "vcpkg not found, cloning fresh"
             git clone https://github.com/microsoft/vcpkg.git $vcpkgDir
           } else {
-            git reset --hard origin/master
+            Write-Host "Attempting safe vcpkg update: fetch + reset + clean"
+            Set-Location $vcpkgDir
+            git fetch --all --prune
             if ($LASTEXITCODE -ne 0) {
-              Write-Host "Reset failed, removing and re-cloning vcpkg"
+              Write-Host "Fetch failed, removing and re-cloning vcpkg"
               Set-Location ${{ runner.temp }}
               Remove-Item -Recurse -Force $vcpkgDir -ErrorAction SilentlyContinue
               git clone https://github.com/microsoft/vcpkg.git $vcpkgDir
             } else {
-              git clean -fdx
-              git submodule update --init --recursive
+              git reset --hard origin/master
+              if ($LASTEXITCODE -ne 0) {
+                Write-Host "Reset failed, removing and re-cloning vcpkg"
+                Set-Location ${{ runner.temp }}
+                Remove-Item -Recurse -Force $vcpkgDir -ErrorAction SilentlyContinue
+                git clone https://github.com/microsoft/vcpkg.git $vcpkgDir
+              } else {
+                git clean -fdx
+                git submodule update --init --recursive
+              }
             }
           }
-        }
-    - name: Bootstrap vcpkg
-      shell: pwsh
-      run: |
-        & "${{ runner.temp }}\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
-    - name: Set VCPKG env vars
-      shell: bash
-      run: |
-        echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg"                          >> $GITHUB_ENV
-        echo "VCPKG_TOOLCHAIN_FILE=${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
-        echo "VCPKG_TARGET_TRIPLET=x64-windows-release"                        >> $GITHUB_ENV
-        echo "CMAKE_PREFIX_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release"                       >> $GITHUB_ENV
-        echo "CMAKE_MODULE_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release/share/ffmpeg"          >> $GITHUB_ENV
-    - name: Install C++ deps via vcpkg (retry on 429)
-      shell: pwsh
-      run: |
-        $vcpkg = "${{ runner.temp }}\vcpkg\vcpkg.exe"
-        $triplet = "x64-windows-release"
-        $packages = "spdlog", "fmt", "libyuv", "ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265,nvcodec]"
-        
-        for ($i = 1; $i -le 3; $i++) {
-          Write-Host "Attempt $i of 3"
-          & $vcpkg remove ffmpeg --triplet $triplet 2>$null
-          & $vcpkg install $packages --triplet $triplet --recurse
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "vcpkg install succeeded"
-            exit 0
-          }
-          Write-Host "vcpkg install failed, retrying in 30s..."
-          Start-Sleep -Seconds 30
-        }
-        Write-Host "All attempts failed"
-        exit 1
-    - name: Save vcpkg cache
-      if: always()
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ runner.temp }}/vcpkg
-          ${{ runner.temp }}/vcpkg/installed
-          ${{ runner.temp }}/vcpkg/archives
-        key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('vcpkg.json','vcpkg-lock.json') }}
-        restore-keys: |
-          vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
-    - name: Set PYTHON_LOCATION env
-      run: echo "PYTHON_LOCATION=${{ env.pythonLocation }}" >> $GITHUB_ENV
-      shell: bash
-    - name: Setup CUDA toolkit
-      uses: Jimver/cuda-toolkit@v0.2.29
-      id: cuda-toolkit
-      with:
-        cuda: '13.0.2'
-        method: 'network'
-        sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev"]'
-    - name: Build Windows wheel
-      shell: bash
-      env:
-        SKBUILD_GENERATOR: Ninja
-        SKBUILD_CONFIG: Release
-        VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
-        VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-        VCPKG_TARGET_TRIPLET:  x64-windows-release
-        CMAKE_ARGS: >-
-          -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_TARGET_TRIPLET=x64-windows-release
-          -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
-          -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
-          -DCELUX_ENABLE_CUDA=ON
-      run: python -m pip wheel . --no-deps -w dist -v
-    - name: Smoke-test wheel in current env
-      shell: bash
-      run: |
-        python -m pip install --upgrade --force-reinstall dist/*.whl
-        python -c "import torch, celux; print(f'torch {torch.__version__}, celux {celux.__version__}')"
-    - name: List final wheel contents
-      run: unzip -l dist/*.whl | grep celux/
-    - name: List dist folder
-      shell: cmd
-      run: dir dist
-    - name: Upload Windows wheel
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-wheel-Release
-        path: '**/dist/*.whl'
 
-  #build-linux:
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - name: Checkout code
-  #      uses: actions/checkout@v4
-#
-  #    - name: Set up Python (host only, cibuildwheel uses Docker for Linux)
-  #      uses: actions/setup-python@v4
-  #      with:
-  #        python-version: ${{ env.PYTHON_VERSION }}
-#
-  #    - name: Install cibuildwheel
-  #      run: python -m pip install cibuildwheel==2.20.0
-#
-  #    - name: Build Linux wheel (manylinux)
-  #      env:
-  #        CIBW_BUILD: "cp313-manylinux*_x86_64"
-  #        CIBW_ARCHS_LINUX: "x86_64"
-  #        CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
-  #        CIBW_ENVIRONMENT_LINUX: >-
-  #          SKBUILD_CONFIG=Release
-  #          SKBUILD_GENERATOR=Ninja
-  #          VCPKG_TARGET_TRIPLET=x64-linux-dynamic
-  #          VCPKG_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-  #          VCPKG_FORCE_SYSTEM_BINARIES=1
-  #          CC=gcc
-  #          CXX=g++
-  #          CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-  #                      -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
-  #                      -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
-  #                      -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
-#
-  #        CIBW_BEFORE_ALL_LINUX: |
-  #          (command -v dnf >/dev/null 2>&1 && dnf -y install \
-  #             git pkgconf nasm zip unzip curl tar \
-  #             gcc gcc-c++ make ninja-build cmake || \
-  #           command -v yum >/dev/null 2>&1 && yum -y install \
-  #             git pkgconf nasm zip unzip curl tar \
-  #             gcc gcc-c++ make ninja-build cmake)
-  #          git clone https://github.com/microsoft/vcpkg /opt/vcpkg
-  #          /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-  #          /opt/vcpkg/vcpkg install spdlog fmt ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
-#
-  #        CIBW_BEFORE_BUILD_LINUX: |
-  #          python -m pip install -U pip wheel setuptools
-  #          python -m pip install --only-binary=:all: "pybind11>=2.11"
-  #          python -m pip install --only-binary=:all: torch || python -m pip install --only-binary=:all: --index-url https://download.pytorch.org/whl/cpu torch
-  #        
-#
-  #        CIBW_TEST_REQUIRES: "torch"
-  #        CIBW_OUTPUT_DIR: dist
-  #      run: python -m cibuildwheel --platform linux
-#
-  #    - name: List dist folder
-  #      run: ls -l dist
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          & "${{ runner.temp }}\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+
+      - name: Set VCPKG env vars
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg" >> $GITHUB_ENV
+          echo "VCPKG_TOOLCHAIN_FILE=${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+          echo "VCPKG_TARGET_TRIPLET=x64-windows-release" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release" >> $GITHUB_ENV
+          echo "CMAKE_MODULE_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release/share/ffmpeg" >> $GITHUB_ENV
+
+      - name: Install C++ deps via vcpkg (retry on 429)
+        shell: pwsh
+        run: |
+          $vcpkg = "${{ runner.temp }}\vcpkg\vcpkg.exe"
+          $triplet = "x64-windows-release"
+          $packages = "spdlog", "fmt", "libyuv", "ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265,nvcodec]"
+          
+          for ($i = 1; $i -le 3; $i++) {
+            Write-Host "Attempt $i of 3"
+            & $vcpkg remove ffmpeg --triplet $triplet 2>$null
+            & $vcpkg install $packages --triplet $triplet --recurse
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "vcpkg install succeeded"
+              exit 0
+            }
+            Write-Host "vcpkg install failed, retrying in 30s..."
+            Start-Sleep -Seconds 30
+          }
+          Write-Host "All attempts failed"
+          exit 1
+
+      - name: Save vcpkg cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg
+            ${{ runner.temp }}/vcpkg/installed
+            ${{ runner.temp }}/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('vcpkg.json','vcpkg-lock.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
+
+      - name: Set PYTHON_LOCATION env
+        shell: bash
+        run: echo "PYTHON_LOCATION=${{ env.pythonLocation }}" >> $GITHUB_ENV
+
+      - name: Setup CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.29
+        id: cuda-toolkit
+        with:
+          cuda: '13.0.2'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev"]'
+
+      - name: Build Windows wheel
+        shell: bash
+        env:
+          SKBUILD_GENERATOR: Ninja
+          SKBUILD_CONFIG: Release
+          VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+          VCPKG_TOOLCHAIN_FILE: ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+          VCPKG_TARGET_TRIPLET: x64-windows-release
+          CELUX_ENABLE_CUDA: "ON"
+          CMAKE_ARGS: >-
+            -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
+            -DVCPKG_TARGET_TRIPLET=x64-windows-release
+            -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
+            -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
+            -DCELUX_ENABLE_CUDA=ON
+        run: python -m pip wheel . --no-deps -w dist -v
+
+      - name: Smoke-test wheel in current env
+        shell: bash
+        run: |
+          python -m pip install --upgrade --force-reinstall dist/*.whl
+          python -c "import torch, celux; print(f'torch {torch.__version__}, celux {celux.__version__}')"
+          # Verify CUDA/NVDEC support is actually compiled in
+          python -c "
+          import celux
+          print(f'CUDA support compiled: {celux.__cuda_support__}')
+          if not celux.__cuda_support__:
+              raise RuntimeError('FATAL: CeLux wheel was not built with CUDA support! Check CMAKE_ARGS and CELUX_ENABLE_CUDA.')
+          print('✓ CUDA/NVDEC support verified')
+          "
+
+      - name: List final wheel contents
+        run: unzip -l dist/*.whl | grep celux/
+
+      - name: List dist folder
+        shell: cmd
+        run: dir dist
+
+      - name: Upload Windows wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-wheel-Release
+          path: '**/dist/*.whl'
+
+  # build-linux:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
   #
-  #    - name: Upload Linux wheel
-  #      uses: actions/upload-artifact@v4
-  #      with:
-  #        name: linux-wheel-Release
-  #        path: 'dist/*.whl'
+  #     - name: Set up Python (host only, cibuildwheel uses Docker for Linux)
+  #       uses: actions/setup-python@v4
+  #       with:
+  #         python-version: ${{ env.PYTHON_VERSION }}
+  #
+  #     - name: Install cibuildwheel
+  #       run: python -m pip install cibuildwheel==2.20.0
+  #
+  #     - name: Build Linux wheel (manylinux)
+  #       env:
+  #         CIBW_BUILD: "cp313-manylinux*_x86_64"
+  #         CIBW_ARCHS_LINUX: "x86_64"
+  #         CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+  #         CIBW_ENVIRONMENT_LINUX: >-
+  #           SKBUILD_CONFIG=Release
+  #           SKBUILD_GENERATOR=Ninja
+  #           VCPKG_TARGET_TRIPLET=x64-linux-dynamic
+  #           VCPKG_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+  #           VCPKG_FORCE_SYSTEM_BINARIES=1
+  #           CC=gcc
+  #           CXX=g++
+  #           CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+  #                       -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
+  #                       -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
+  #                       -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
+  #
+  #         CIBW_BEFORE_ALL_LINUX: |
+  #           (command -v dnf >/dev/null 2>&1 && dnf -y install \
+  #              git pkgconf nasm zip unzip curl tar \
+  #              gcc gcc-c++ make ninja-build cmake || \
+  #            command -v yum >/dev/null 2>&1 && yum -y install \
+  #              git pkgconf nasm zip unzip curl tar \
+  #              gcc gcc-c++ make ninja-build cmake)
+  #           git clone https://github.com/microsoft/vcpkg /opt/vcpkg
+  #           /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+  #           /opt/vcpkg/vcpkg install spdlog fmt ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
+  #
+  #         CIBW_BEFORE_BUILD_LINUX: |
+  #           python -m pip install -U pip wheel setuptools
+  #           python -m pip install --only-binary=:all: "pybind11>=2.11"
+  #           python -m pip install --only-binary=:all: torch || python -m pip install --only-binary=:all: --index-url https://download.pytorch.org/whl/cpu torch
+  #
+  #         CIBW_TEST_REQUIRES: "torch"
+  #         CIBW_OUTPUT_DIR: dist
+  #       run: python -m cibuildwheel --platform linux
+  #
+  #     - name: List dist folder
+  #       run: ls -l dist
+  #
+  #     - name: Upload Linux wheel
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: linux-wheel-Release
+  #         path: 'dist/*.whl'
 
   release:
     needs: [build-windows]
@@ -227,20 +251,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Download Windows wheels
         uses: actions/download-artifact@v4
         with:
           name: windows-wheel-Release
           path: dist
-  #    - name: Download Linux wheels
-  #      uses: actions/download-artifact@v4
-  #      with:
-  #        name: linux-wheel-Release
-  #        path: dist
+
+      # - name: Download Linux wheels
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: linux-wheel-Release
+      #     path: dist
+
       - name: List all files for debug
         run: ls -lR dist
+
       - name: Install tomllib (if needed)
         run: python3 -m pip install toml pybind11
+
       - name: Extract version from pyproject.toml
         id: get_version
         shell: bash
@@ -248,24 +277,27 @@ jobs:
           VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Create tag for this version
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           git tag v${{ env.VERSION }}
           git push origin v${{ env.VERSION }}
+
       - name: Flatten wheel artifacts to top-level dist/
         run: |
           find dist -name '*.whl' -exec mv {} dist/ \;
+
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag:   v${{ env.VERSION }}
-          name:  Release v${{ env.VERSION }}
-          body:  Automated CI build & wheel
+          tag: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          body: Automated CI build & wheel
           artifacts: 'dist/*.whl'
-#
+
   pypi-publish:
     needs: release
     runs-on: ubuntu-latest
@@ -274,7 +306,7 @@ jobs:
       name: pypi
       url: https://pypi.org/p/nelux
     permissions:
-      id-token: write 
+      id-token: write
     steps:
       - name: Download Windows wheels
         uses: actions/download-artifact@v4

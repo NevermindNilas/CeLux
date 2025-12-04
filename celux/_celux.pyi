@@ -5,6 +5,9 @@ import numpy as np
 from numpy.typing import NDArray
 from enum import Enum
 
+__version__: str
+__cuda_support__: bool
+
 class LogLevel(Enum):
     trace = 0
     debug = 1

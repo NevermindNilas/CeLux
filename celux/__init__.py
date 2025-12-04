@@ -15,6 +15,7 @@ if os.name == "nt":
 import torch
 from ._celux import (
     __version__,
+    __cuda_support__,
     VideoReader,
     VideoEncoder,
     Audio,
@@ -24,6 +25,7 @@ from ._celux import (
 
 __all__ = [
     "__version__",
+    "__cuda_support__",
     "VideoReader",
     "VideoEncoder",
     "Audio",

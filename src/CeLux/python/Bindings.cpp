@@ -28,9 +28,18 @@ Backend backendFromString(const std::string& backend_str)
 PYBIND11_MODULE(_celux, m)
 {
     m.doc() = "celux – lightspeed video decoding into tensors";
-     m.attr("__version__") = "0.8.0"; 
+     m.attr("__version__") = "0.8.1"; 
+    
+    // Expose CUDA build status
+#ifdef CELUX_ENABLE_CUDA
+    m.attr("__cuda_support__") = true;
+#else
+    m.attr("__cuda_support__") = false;
+#endif
+
     m.attr("__all__") = py::make_tuple(
         "__version__",
+        "__cuda_support__",
         "VideoReader",
         "VideoEncoder",
         "Audio", "set_log_level", "LogLevel"

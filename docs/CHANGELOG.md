@@ -1,7 +1,18 @@
 
 ## 📈 Changelog
 
-### **Version 0.8.0 (Unreleased)**
+### **Version 0.8.1 (2025-12-04)**
+
+#### **Build System & CI Fixes**
+- **Fixed:** PyPI wheel was not being built with CUDA support due to `CELUX_ENABLE_CUDA` not being properly passed to CMake via scikit-build-core
+- **Added:** `CELUX_ENABLE_CUDA` env var support in `pyproject.toml` via `[tool.scikit-build.cmake.define]` section
+- **Added:** `celux.__cuda_support__` attribute to check at runtime if the wheel was built with CUDA/NVDEC support
+- **Enhanced:** CI smoke test now verifies `__cuda_support__ == True` and fails the build if CUDA wasn't compiled in
+- **Updated:** PyTorch installation in CI now uses `cu130` index (CUDA 13.0 wheels now available)
+
+---
+
+### **Version 0.8.0 (2025-12-04)**
 
 #### **NVDEC Hardware Decoding (GPU-Accelerated)**
 - **Added:** Full NVDEC hardware decoding support via `decode_accelerator="nvdec"` parameter

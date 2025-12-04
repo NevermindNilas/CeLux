@@ -51,11 +51,22 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git "${{ runner.temp }}/vcpkg"
         }
         & "${{ runner.temp }}/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
-    - name: Update vcpkg ports
+    - name: Update vcpkg ports (safe)
       shell: cmd
       run: |
         cd "${{ runner.temp }}\vcpkg"
-        git pull
+        echo "Attempting a safe update: fetch + reset + clean"
+        setlocal enabledelayedexpansion
+        git fetch --all --prune || (echo "fetch failed, will re-clone" & exit /b 1)
+        REM Reset working tree to origin/master to avoid merge conflicts from cached untracked files
+        git reset --hard origin/master || (
+            echo "reset failed, removing and re-cloning vcpkg." 
+            & endlocal & rmdir /s /q "%RUNNER_TEMP%\vcpkg" 
+            & git clone https://github.com/microsoft/vcpkg.git "%RUNNER_TEMP%\vcpkg" 
+            & exit /b 0
+        )
+        git clean -fdx || echo "git clean returned non-zero (ignored)"
+        git submodule update --init --recursive || echo "submodule update failed (ignored)"
     - name: Set VCPKG env vars
       shell: bash
       run: |

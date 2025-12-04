@@ -52,21 +52,27 @@ jobs:
         }
         & "${{ runner.temp }}/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
     - name: Update vcpkg ports (safe)
-      shell: cmd
+      shell: pwsh
       run: |
-        cd "${{ runner.temp }}\vcpkg"
-        echo "Attempting a safe update: fetch + reset + clean"
-        setlocal enabledelayedexpansion
-        git fetch --all --prune || (echo "fetch failed, will re-clone" & exit /b 1)
-        REM Reset working tree to origin/master to avoid merge conflicts from cached untracked files
-        git reset --hard origin/master || (
-            echo "reset failed, removing and re-cloning vcpkg." 
-            & endlocal & rmdir /s /q "%RUNNER_TEMP%\vcpkg" 
-            & git clone https://github.com/microsoft/vcpkg.git "%RUNNER_TEMP%\vcpkg" 
-            & exit /b 0
-        )
-        git clean -fdx || echo "git clean returned non-zero (ignored)"
-        git submodule update --init --recursive || echo "submodule update failed (ignored)"
+        $vcpkgDir = "${{ runner.temp }}\vcpkg"
+        Write-Host "Attempting safe vcpkg update: fetch + reset + clean"
+        Set-Location $vcpkgDir
+        git fetch --all --prune
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "Fetch failed, removing and re-cloning vcpkg"
+          Remove-Item -Recurse -Force $vcpkgDir -ErrorAction SilentlyContinue
+          git clone https://github.com/microsoft/vcpkg.git $vcpkgDir
+          exit 0
+        }
+        git reset --hard origin/master
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "Reset failed, removing and re-cloning vcpkg"
+          Remove-Item -Recurse -Force $vcpkgDir -ErrorAction SilentlyContinue
+          git clone https://github.com/microsoft/vcpkg.git $vcpkgDir
+          exit 0
+        }
+        git clean -fdx
+        git submodule update --init --recursive
     - name: Set VCPKG env vars
       shell: bash
       run: |

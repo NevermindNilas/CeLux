@@ -139,6 +139,23 @@ jobs:
           method: 'network'
           sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev"]'
 
+      - name: Export CUDA env and PATH
+        shell: pwsh
+        run: |
+          $cudaPath = "${{ steps.cuda-toolkit.outputs.cuda-path }}"
+          if (-not (Test-Path $cudaPath)) {
+            Write-Error "CUDA path not found at $cudaPath"
+            exit 1
+          }
+
+          Add-Content $env:GITHUB_ENV "CUDA_PATH=$cudaPath"
+          Add-Content $env:GITHUB_ENV "CUDA_HOME=$cudaPath"
+          Add-Content $env:GITHUB_ENV "CUDAToolkit_ROOT=$cudaPath"
+          Add-Content $env:GITHUB_ENV "CMAKE_CUDA_COMPILER=$cudaPath\bin\nvcc.exe"
+
+          Add-Content $env:GITHUB_PATH "$cudaPath\bin"
+          Add-Content $env:GITHUB_PATH "$cudaPath\libnvvp"
+
       - name: Build Windows wheel
         shell: bash
         env:
@@ -154,6 +171,8 @@ jobs:
             -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
             -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
             -DCELUX_ENABLE_CUDA=ON
+            -DCMAKE_CUDA_COMPILER=${{ env.CUDA_PATH }}\\bin\\nvcc.exe
+            -DCUDAToolkit_ROOT=${{ env.CUDA_PATH }}
         run: python -m pip wheel . --no-deps -w dist -v
 
       - name: Smoke-test wheel in current env

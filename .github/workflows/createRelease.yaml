@@ -137,7 +137,7 @@ jobs:
         with:
           cuda: '13.0.2'
           method: 'network'
-          sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev"]'
+          sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev", "visual_studio_integration"]'
 
       - name: Export CUDA env and PATH
         shell: pwsh
@@ -155,6 +155,9 @@ jobs:
 
           Add-Content $env:GITHUB_PATH "$cudaPath\bin"
           Add-Content $env:GITHUB_PATH "$cudaPath\libnvvp"
+
+      - name: Install Ninja
+        run: python -m pip install ninja
 
       - name: Build Windows wheel
         shell: bash

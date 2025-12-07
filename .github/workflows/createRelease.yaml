@@ -137,7 +137,9 @@ jobs:
         with:
           cuda: '13.0.2'
           method: 'network'
-          sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev", "visual_studio_integration"]'
+          use-github-cache: 'true'
+          use-local-cache: 'true'
+          sub-packages: '["nvcc", "cudart", "cudart_dev", "crt", "nvrtc", "nvrtc_dev", "visual_studio_integration"]'
 
       - name: Export CUDA env and PATH
         shell: pwsh
@@ -155,6 +157,12 @@ jobs:
 
           Add-Content $env:GITHUB_PATH "$cudaPath\bin"
           Add-Content $env:GITHUB_PATH "$cudaPath\libnvvp"
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: windows-ccache-${{ hashFiles('CMakeLists.txt', 'src/**/*.cpp', 'src/**/*.hpp', 'include/**/*.hpp') }}
+          max-size: 500M
 
       - name: Install Ninja
         run: python -m pip install ninja
@@ -175,6 +183,8 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows-release \
             -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release \
             -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCELUX_ENABLE_CUDA=ON \
             -DCMAKE_CUDA_COMPILER=\"${CUDA_PATH_FOR_BUILD}/bin/nvcc.exe\" \
             -DCUDAToolkit_ROOT=\"${CUDA_PATH_FOR_BUILD}\""

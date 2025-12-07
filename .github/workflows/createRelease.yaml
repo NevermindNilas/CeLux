@@ -165,15 +165,18 @@ jobs:
           VCPKG_TOOLCHAIN_FILE: ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
           VCPKG_TARGET_TRIPLET: x64-windows-release
           CELUX_ENABLE_CUDA: "ON"
-          CMAKE_ARGS: >-
-            -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
-            -DVCPKG_TARGET_TRIPLET=x64-windows-release
-            -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
-            -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
-            -DCELUX_ENABLE_CUDA=ON
-            -DCMAKE_CUDA_COMPILER=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe
-            -DCUDAToolkit_ROOT=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
-        run: python -m pip wheel . --no-deps -w dist -v
+          CUDA_PATH_FOR_BUILD: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+        run: |
+          # Construct CMAKE_ARGS with proper quoting for paths with spaces
+          export CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-windows-release \
+            -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release \
+            -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg \
+            -DCELUX_ENABLE_CUDA=ON \
+            -DCMAKE_CUDA_COMPILER=\"${CUDA_PATH_FOR_BUILD}/bin/nvcc.exe\" \
+            -DCUDAToolkit_ROOT=\"${CUDA_PATH_FOR_BUILD}\""
+          echo "CMAKE_ARGS: $CMAKE_ARGS"
+          python -m pip wheel . --no-deps -w dist -v
 
       - name: Smoke-test wheel in current env
         shell: bash

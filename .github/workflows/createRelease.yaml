@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install pybind11 numpy
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
 
       - name: Cache vcpkg build & installs
         uses: actions/cache@v4
@@ -135,14 +135,14 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.29
         id: cuda-toolkit
         with:
-          cuda: '12.6.3'
+          cuda: '13.0.2'
           method: 'network'
           sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev"]'
 
       - name: Export CUDA env and PATH
         shell: pwsh
         run: |
-          $cudaPath = "${{ steps.cuda-toolkit.outputs.cuda-path }}"
+          $cudaPath = "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
           if (-not (Test-Path $cudaPath)) {
             Write-Error "CUDA path not found at $cudaPath"
             exit 1
@@ -171,8 +171,8 @@ jobs:
             -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
             -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
             -DCELUX_ENABLE_CUDA=ON
-            -DCMAKE_CUDA_COMPILER=${{ steps.cuda-toolkit.outputs.cuda-path }}/bin/nvcc.exe
-            -DCUDAToolkit_ROOT=${{ steps.cuda-toolkit.outputs.cuda-path }}
+            -DCMAKE_CUDA_COMPILER=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe
+            -DCUDAToolkit_ROOT=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
         run: python -m pip wheel . --no-deps -w dist -v
 
       - name: Smoke-test wheel in current env

@@ -171,8 +171,8 @@ jobs:
             -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
             -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
             -DCELUX_ENABLE_CUDA=ON
-            -DCMAKE_CUDA_COMPILER=${{ env.CUDA_PATH }}\\bin\\nvcc.exe
-            -DCUDAToolkit_ROOT=${{ env.CUDA_PATH }}
+            -DCMAKE_CUDA_COMPILER=${{ steps.cuda-toolkit.outputs.cuda-path }}/bin/nvcc.exe
+            -DCUDAToolkit_ROOT=${{ steps.cuda-toolkit.outputs.cuda-path }}
         run: python -m pip wheel . --no-deps -w dist -v
 
       - name: Smoke-test wheel in current env

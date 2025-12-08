@@ -21,6 +21,9 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Setup MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
         
     - name: Upgrade pip & install deps
       run: |
@@ -92,6 +95,7 @@ jobs:
         VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
         VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
         VCPKG_TARGET_TRIPLET:  x64-windows-release
+        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
         CMAKE_ARGS: >-
           -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
           -DVCPKG_TARGET_TRIPLET=x64-windows-release

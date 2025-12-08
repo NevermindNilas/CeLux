@@ -33,7 +33,7 @@ jobs:
     - name: Upgrade pip & install deps
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        python -m pip install pybind11 torch numpy
+        python -m pip install pybind11 torch numpy ninja
     - name: Cache vcpkg build & installs
       uses: actions/cache@v4
       with:

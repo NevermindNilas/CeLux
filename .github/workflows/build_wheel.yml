@@ -50,7 +50,9 @@ jobs:
       shell: cmd
       run: |
         cd "${{ runner.temp }}\vcpkg"
-        git pull
+        git fetch origin master
+        git reset --hard origin/master
+        git clean -fd
 
     - name: Set VCPKG env vars
       shell: bash
@@ -74,6 +76,14 @@ jobs:
         dir "${{ runner.temp }}\vcpkg\installed\x64-windows-release\bin\dav1d.dll" 2>nul || (echo "ERROR: dav1d.dll not found!" && exit /b 1)
         echo "=== dav1d verification passed ==="
 
+    - name: Setup CUDA toolkit
+      uses: Jimver/cuda-toolkit@v0.2.29
+      id: cuda-toolkit
+      with:
+        cuda: '12.6.3'
+        method: 'network'
+        sub-packages: '["nvcc", "cudart"]'
+
     - name: Build Windows wheel
       shell: bash
       env:
@@ -87,7 +97,12 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows-release
           -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
           -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
-      run: python -m pip wheel . --no-deps -w dist -v
+          -DCELUX_ENABLE_CUDA=ON
+          -DCMAKE_CUDA_COMPILER="${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe"
+      run: |
+        echo "Checking nvcc version..."
+        "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
+        python -m pip wheel . --no-deps -w dist -v
 
     - name: Verify dav1d.dll is bundled in wheel
       shell: bash

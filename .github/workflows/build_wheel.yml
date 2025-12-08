@@ -87,7 +87,7 @@ jobs:
     - name: Build Windows wheel
       shell: bash
       env:
-        SKBUILD_GENERATOR: Ninja
+        CMAKE_GENERATOR: Ninja
         SKBUILD_CONFIG: Release
         VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
         VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake

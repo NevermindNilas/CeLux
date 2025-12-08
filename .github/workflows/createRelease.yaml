@@ -93,7 +93,7 @@ jobs:
       with:
         cuda: '13.0.2'
         method: 'network'
-        sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev"]'
+        sub-packages: '["nvcc", "cudart"]'
     - name: Build Windows wheel
       shell: bash
       env:
@@ -102,6 +102,7 @@ jobs:
         VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
         VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
         VCPKG_TARGET_TRIPLET:  x64-windows-release
+        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
         CMAKE_ARGS: >-
           -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
           -DVCPKG_TARGET_TRIPLET=x64-windows-release

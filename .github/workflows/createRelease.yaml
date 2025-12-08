@@ -55,7 +55,9 @@ jobs:
       shell: cmd
       run: |
         cd "${{ runner.temp }}\vcpkg"
-        git pull
+        git fetch origin master
+        git reset --hard origin/master
+        git clean -fd
     - name: Set VCPKG env vars
       shell: bash
       run: |

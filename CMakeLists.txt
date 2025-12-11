@@ -308,6 +308,35 @@ if(WIN32 AND CELUX_BUILD_PYTHON)
     "${VCPKG_BIN}/libx265*.dll"
     "${VCPKG_BIN}/libyuv*.dll"
     "${VCPKG_BIN}/spdlog*.dll"
+    "${VCPKG_BIN}/fmt*.dll"
+    "${VCPKG_BIN}/*jpeg*.dll"
+    "${VCPKG_BIN}/dav1d.dll"
+  )
+
+  if(CELUX_ENABLE_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    if(CUDAToolkit_FOUND AND DEFINED CUDAToolkit_BIN_DIR)
+      set(CUDA_BIN_DIR "${CUDAToolkit_BIN_DIR}")
+    elseif(DEFINED ENV{CUDA_PATH})
+      file(TO_CMAKE_PATH "$ENV{CUDA_PATH}/bin" CUDA_BIN_DIR)
+    endif()
+
+    if(DEFINED CUDA_BIN_DIR)
+      file(GLOB CELUX_CUDA_DLLS
+        "${CUDA_BIN_DIR}/cudart64_*.dll"
+        "${CUDA_BIN_DIR}/nvrtc64_*.dll"
+      )
+      list(APPEND CELUX_DLLS ${CELUX_CUDA_DLLS})
+      message(STATUS "CUDA DLLs to bundle from ${CUDA_BIN_DIR}: ${CELUX_CUDA_DLLS}")
+    else()
+      message(WARNING "Could not determine CUDA BIN directory. CUDA DLLs will not be bundled!")
+    endif()
+  endif()
+
+  message(STATUS "Found ${CMAKE_CURRENT_LIST_DIR} DLLs to bundle: ${CELUX_DLLS}")
+
+  foreach(dll ${CELUX_DLLS})
+    add_custom_command(TARGET celux POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "${CELUX_DLL_DIR}"
       COMMENT "Copying dependency DLL: ${dll} → ${CELUX_DLL_DIR}"
     )

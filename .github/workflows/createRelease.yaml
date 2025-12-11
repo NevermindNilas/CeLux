@@ -37,7 +37,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip setuptools wheel
         python -m pip install pybind11 numpy ninja
-        python -m pip install torch --index-url https://download.pytorch.org/whl/cu124
+        python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
     - name: Cache vcpkg build & installs
       uses: actions/cache@v4
       with:
@@ -97,7 +97,7 @@ jobs:
       uses: Jimver/cuda-toolkit@v0.2.29
       id: cuda-toolkit
       with:
-        cuda: '12.6.3'
+        cuda: '13.0.2'
         method: 'network'
         sub-packages: '["nvcc", "cudart"]'
     - name: Build Windows wheel

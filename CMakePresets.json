@@ -15,7 +15,7 @@
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "installDir": "${sourceDir}/out/install/${presetName}",
 
-      "toolchainFile": "D:/dev/c++/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "toolchainFile": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       },
@@ -43,6 +43,17 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CELUX_ENABLE_CUDA": "OFF"
+      }
+    },
+
+    {
+      "name": "x64-release-cpu-baseline",
+      "displayName": "x64 Release (CPU, baseline ISA)",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CELUX_ENABLE_CUDA": "OFF",
+        "CELUX_ENABLE_AVX2": "OFF"
       }
     },
     {

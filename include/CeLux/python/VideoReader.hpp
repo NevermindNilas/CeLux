@@ -231,11 +231,6 @@ class VideoReader
     py::object frameAt(int frame_index);
 
     /**
-     * @brief Enable or disable libyuv acceleration.
-     */
-    void set_libyuv_enabled(bool enabled);
-
-    /**
      * @brief Iterator support: returns self.
      */
     VideoReader& iter();
@@ -326,7 +321,6 @@ class VideoReader
     // Lazy loading support
     std::string filePath;
     int numThreads;
-    bool libyuv_enabled = true;
     bool force_8bit = false;
     Backend backend = Backend::PyTorch; // Output backend selection
     celux::DecodeAccelerator decodeAccelerator = celux::DecodeAccelerator::CPU;

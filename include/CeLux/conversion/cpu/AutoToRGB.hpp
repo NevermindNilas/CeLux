@@ -41,7 +41,7 @@ class AutoToRGBConverter : public ConverterBase
         : ConverterBase(), sws_ctx(nullptr), last_src_fmt(AV_PIX_FMT_NONE),
           last_dst_fmt(AV_PIX_FMT_NONE), last_src_colorspace(AVCOL_SPC_UNSPECIFIED),
           last_src_color_range(AVCOL_RANGE_UNSPECIFIED), last_width(0), last_height(0),
-          use_libyuv(true), force_8bit(false)
+                    force_8bit(false)
     {
     }
 
@@ -51,7 +51,6 @@ class AutoToRGBConverter : public ConverterBase
             sws_freeContext(sws_ctx);
     }
 
-    void setLibyuvEnabled(bool enabled) { use_libyuv = enabled; }
     void setForce8Bit(bool enabled) { force_8bit = enabled; }
 
     void convert(celux::Frame& frame, void* buffer) override
@@ -64,33 +63,7 @@ class AutoToRGBConverter : public ConverterBase
         // 1) Derive effective bit depth from the frame itself
         const int bit_depth = effective_bit_depth_from_frame(av_frame);
 
-        // 2) Try libyuv fast path for 8-bit targets
-        if (use_libyuv)
-        {
-            if (bit_depth <= 8)
-            {
-                if (convertViaLibyuv(av_frame, buffer, width, height))
-                    return;
-            }
-            else
-            {
-                // 10-bit (or more) to 8-bit RGB24 via libyuv
-                // We attempt this regardless of force_8bit if libyuv is enabled.
-                if (convert10BitTo8BitLibyuv(av_frame, buffer, width, height))
-                    return;
-            }
-        }
-
-        // 3) Choose destination format/stride accordingly
-        // If force_8bit is true, we want RGB24 regardless of input bit depth
-        // If libyuv is enabled, we default to 8-bit RGB24 because libyuv paths produce 8-bit.
-        // This ensures consistency between the fast path and the sws_scale fallback.
-        const AVPixelFormat dst_fmt =
-            (bit_depth <= 8 || force_8bit || use_libyuv) ? AV_PIX_FMT_RGB24 : AV_PIX_FMT_RGB48LE;
-        const int elem_size = (bit_depth <= 8 || force_8bit || use_libyuv) ? 1 : 2; // bytes per channel
-        const int channels = 3;
-
-        // 4) Colorspace defaults
+        // 1.5) Deduce colorspace defaults (Moved up for libyuv usage)
         AVColorSpace src_colorspace = av_frame->colorspace;
         if (src_colorspace == AVCOL_SPC_UNSPECIFIED)
             src_colorspace = (height > 576) ? AVCOL_SPC_BT709 : AVCOL_SPC_BT470BG;
@@ -99,22 +72,81 @@ class AutoToRGBConverter : public ConverterBase
         if (src_color_range == AVCOL_RANGE_UNSPECIFIED)
             src_color_range = AVCOL_RANGE_MPEG;
 
+        // 1.8) Fast-path for RGB inputs (Passthrough or Swizzle) - "Piece of cake" optimization
+        if (bit_depth <= 8 && (src_fmt == AV_PIX_FMT_RGB24 || src_fmt == AV_PIX_FMT_BGR24))
+        {
+             // We can let swscale handle BGR24->RGB24 switch efficiently if configured with SWS_POINT (done below)
+             // or handle identical format copy here
+             if (src_fmt == AV_PIX_FMT_RGB24)
+             {
+                 // Direct copy!
+                 uint8_t* dst_ptr = static_cast<uint8_t*>(buffer);
+                 int dst_stride = width * 3;
+                 
+                 // Copy per row
+                 for(int i=0; i<height; ++i) {
+                     std::memcpy(dst_ptr + i*dst_stride, av_frame->data[0] + i*av_frame->linesize[0], width * 3);
+                 }
+                 return;
+             }
+        }
+
+        // 2) Always prefer libyuv where it is applicable.
+        // - For <=8-bit sources, try libyuv first.
+        // - For >8-bit sources, only use libyuv when explicitly forcing 8-bit output.
+        if (bit_depth <= 8)
+        {
+            // Pass the DEDUCED colorspace (src_colorspace) which handles the "Unspecified -> BT.709" logic
+            if (convertViaLibyuv(av_frame, buffer, width, height, src_colorspace))
+                return;
+        }
+        else if (force_8bit)
+        {
+            if (convert10BitTo8BitLibyuv(av_frame, buffer, width, height, src_colorspace))
+                return;
+        }
+
+        // 3) Choose destination format/stride accordingly
+        // If force_8bit is true, we want RGB24 regardless of input bit depth.
+        // Otherwise, preserve >8-bit sources by using RGB48LE.
+        const AVPixelFormat dst_fmt =
+            (bit_depth <= 8 || force_8bit) ? AV_PIX_FMT_RGB24 : AV_PIX_FMT_RGB48LE;
+        const int elem_size = (bit_depth <= 8 || force_8bit) ? 1 : 2; // bytes per channel
+        const int channels = 3;
+
+
         // 5) (Re)build sws context if anything changed
         if (!sws_ctx || src_fmt != last_src_fmt || dst_fmt != last_dst_fmt ||
             src_colorspace != last_src_colorspace ||
             src_color_range != last_src_color_range || width != last_width ||
             height != last_height)
         {
-            if (sws_ctx)
+            int flags = SWS_SPLINE | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INT | SWS_FULL_CHR_V_INT;
+            
+            // Only use POINT (nearest neighbor) if dimensions match AND we are likely just shuffling channels (RGB/BGR/BGRA etc.)
+            // Using POINT for YUV420P would result in nearest-neighbor chroma upsampling (blocky colors), which we want to avoid.
+            if (width == last_width && height == last_height)
             {
-                sws_freeContext(sws_ctx);
-                sws_ctx = nullptr;
+               if (src_fmt == AV_PIX_FMT_RGB24 || src_fmt == AV_PIX_FMT_BGR24 || 
+                   src_fmt == AV_PIX_FMT_ARGB || src_fmt == AV_PIX_FMT_RGBA ||
+                   src_fmt == AV_PIX_FMT_ABGR || src_fmt == AV_PIX_FMT_BGRA) 
+               {
+                   flags = SWS_POINT;
+               }
             }
-
-            sws_ctx = sws_getContext(width, height, src_fmt, width, height, dst_fmt,
-                                     SWS_SPLINE | SWS_ACCURATE_RND |
-                                         SWS_FULL_CHR_H_INT | SWS_FULL_CHR_V_INT,
-                                     nullptr, nullptr, nullptr);
+            
+            sws_ctx = sws_getCachedContext(
+                sws_ctx,
+                width,
+                height,
+                src_fmt,
+                width,
+                height,
+                dst_fmt,
+                flags,
+                nullptr,
+                nullptr,
+                nullptr);
             if (!sws_ctx)
                 throw std::runtime_error("Failed to initialize swsContext");
 
@@ -158,14 +190,13 @@ class AutoToRGBConverter : public ConverterBase
     AVColorSpace last_src_colorspace;
     AVColorRange last_src_color_range;
     int last_width, last_height;
-    bool use_libyuv;
     bool force_8bit;
 
     // Temporary buffers for 10-bit -> 8-bit downscaling
     std::vector<uint8_t> tmp_y, tmp_u, tmp_v;
     int tmp_width = 0, tmp_height = 0;
 
-    bool convert10BitTo8BitLibyuv(AVFrame* frame, void* buffer, int width, int height)
+    bool convert10BitTo8BitLibyuv(AVFrame* frame, void* buffer, int width, int height, AVColorSpace colorspace)
     {
         // NEW: Direct conversion for YUV420P10LE using I010ToI420 + I420ToRAW
         // This avoids the missing I010ToRGB24Matrix function.
@@ -212,7 +243,7 @@ class AutoToRGBConverter : public ConverterBase
             
             bool is_full_range = (frame->color_range == AVCOL_RANGE_JPEG);
 
-            if (frame->colorspace == AVCOL_SPC_BT709)
+            if (colorspace == AVCOL_SPC_BT709)
             {
                 // BT.709 -> RGB
                 return 0 == libyuv::H420ToRAW(
@@ -359,7 +390,7 @@ class AutoToRGBConverter : public ConverterBase
         return false; // Unsupported subsampling for libyuv path
     }
 
-    bool convertViaLibyuv(AVFrame* frame, void* buffer, int width, int height)
+    bool convertViaLibyuv(AVFrame* frame, void* buffer, int width, int height, AVColorSpace colorspace)
     {
         uint8_t* dst_ptr = static_cast<uint8_t*>(buffer);
         int dst_stride = width * 3;
@@ -367,13 +398,13 @@ class AutoToRGBConverter : public ConverterBase
         const libyuv::YuvConstants* yuv_constants = &libyuv::kYuvI601Constants;
         const libyuv::YuvConstants* yvu_constants = &libyuv::kYvuI601Constants;
 
-        if (frame->colorspace == AVCOL_SPC_BT709)
+        if (colorspace == AVCOL_SPC_BT709)
         {
             yuv_constants = &libyuv::kYuvH709Constants;
             yvu_constants = &libyuv::kYvuH709Constants;
         }
-        else if (frame->colorspace == AVCOL_SPC_BT2020_NCL ||
-                 frame->colorspace == AVCOL_SPC_BT2020_CL)
+        else if (colorspace == AVCOL_SPC_BT2020_NCL ||
+                 colorspace == AVCOL_SPC_BT2020_CL)
         {
             yuv_constants = &libyuv::kYuv2020Constants;
             yvu_constants = &libyuv::kYvu2020Constants;

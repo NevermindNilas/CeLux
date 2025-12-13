@@ -108,8 +108,6 @@ Args:
         .def_property_readonly("audio", &VideoReader::getAudio)
         .def("supported_codecs", &VideoReader::supportedCodecs)
         .def("get_properties", &VideoReader::getProperties)
-        .def("set_libyuv_enabled", &VideoReader::set_libyuv_enabled,
-             "Enable or disable libyuv acceleration (default: True).")
         .def("create_encoder", &VideoReader::createEncoder, py::arg("output_path"),
              "Create a celux::VideoEncoder configured to this reader's video + audio "
              "settings.")

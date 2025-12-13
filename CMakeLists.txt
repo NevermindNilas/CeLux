@@ -27,6 +27,12 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(CELUX_ENABLE_CUDA   "Enable CUDA support in CeLux" OFF)
 option(CELUX_BUILD_PYTHON "Build Python bindings"     ON)
 
+# Host-side performance options (C++ only)
+# - AVX2: targets modern x86_64 CPUs; can be disabled for broader compatibility.
+# - LTO: enables interprocedural optimization (IPO/LTO) in Release when supported.
+option(CELUX_ENABLE_AVX2 "Enable AVX2 for host (C++) code" ON)
+option(CELUX_ENABLE_LTO  "Enable IPO/LTO for Release builds" ON)
+
 # --- Enable CUDA language if requested ---
 if(CELUX_ENABLE_CUDA)
   include(CheckLanguage)
@@ -187,6 +193,26 @@ endif()
 
 add_library(CeLuxLib STATIC ${CELUX_SOURCES})
 
+# --- Host ISA / AVX2 ---
+if(CELUX_ENABLE_AVX2)
+  if(MSVC)
+    target_compile_options(CeLuxLib PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>)
+  else()
+    target_compile_options(CeLuxLib PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-mavx2>)
+  endif()
+endif()
+
+# --- IPO / LTO (Release) ---
+if(CELUX_ENABLE_LTO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT _celux_ipo_supported OUTPUT _celux_ipo_error)
+  if(_celux_ipo_supported)
+    set_property(TARGET CeLuxLib PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+  else()
+    message(WARNING "IPO/LTO requested but not supported: ${_celux_ipo_error}")
+  endif()
+endif()
+
 # Link CUDA library if enabled
 if(CELUX_ENABLE_CUDA)
   target_compile_definitions(CeLuxLib PUBLIC CELUX_ENABLE_CUDA)
@@ -232,6 +258,25 @@ endif()
 
 if(CELUX_BUILD_PYTHON)
   add_library(celux MODULE src/CeLux/python/Bindings.cpp)
+
+  # Match host performance flags on the Python extension module
+  if(CELUX_ENABLE_AVX2)
+    if(MSVC)
+      target_compile_options(celux PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>)
+    else()
+      target_compile_options(celux PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-mavx2>)
+    endif()
+  endif()
+
+  if(CELUX_ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT _celux_ipo_supported_py OUTPUT _celux_ipo_error_py)
+    if(_celux_ipo_supported_py)
+      set_property(TARGET celux PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    else()
+      message(WARNING "IPO/LTO requested but not supported for celux module: ${_celux_ipo_error_py}")
+    endif()
+  endif()
 
   target_include_directories(celux PRIVATE
     ${CELUX_PYBIND11_INCS}

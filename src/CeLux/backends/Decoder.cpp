@@ -152,7 +152,6 @@ void Decoder::initialize(const std::string& filePath)
     if (autoConverter)
     {
         autoConverter->setForce8Bit(force_8bit);
-        autoConverter->setLibyuvEnabled(libyuv_enabled);
     }
 
     const AVCodecParameters* params = formatCtx->streams[videoStreamIndex]->codecpar;
@@ -1130,19 +1129,6 @@ torch::Tensor Decoder::getAudioTensor()
     return audioTensor;
 }
 
-void Decoder::setLibyuvEnabled(bool enabled)
-{
-    libyuv_enabled = enabled;
-    if (converter)
-    {
-        auto* autoConverter = dynamic_cast<celux::conversion::cpu::AutoToRGBConverter*>(converter.get());
-        if (autoConverter)
-        {
-            autoConverter->setLibyuvEnabled(enabled);
-        }
-    }
-}
-
 void Decoder::setForce8Bit(bool enabled)
 {
     force_8bit = enabled;
@@ -1202,9 +1188,10 @@ void Decoder::decodingLoop()
         
         if (ret == 0)
         {
+            Frame queuedFrame(localFrame);
             {
                 std::unique_lock<std::mutex> lock(queueMutex);
-                frameQueue.push(localFrame);
+                frameQueue.push(std::move(queuedFrame));
                 queueCond.notify_one();
             }
             av_frame_unref(localFrame.get());

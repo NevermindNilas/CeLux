@@ -33,14 +33,8 @@ def generate_source():
     )
 
 
-def benchmark(use_libyuv):
+def benchmark():
     reader = celux.VideoReader(SOURCE_FILE)
-    # Check if set_libyuv_enabled exists (it should if build is updated)
-    if hasattr(reader, "set_libyuv_enabled"):
-        reader.set_libyuv_enabled(use_libyuv)
-    else:
-        print("Warning: set_libyuv_enabled not found on VideoReader")
-        return
 
     start = time.time()
     count = 0
@@ -51,15 +45,14 @@ def benchmark(use_libyuv):
     duration = end - start
     fps = count / duration
     print(
-        f"libyuv={'ON ' if use_libyuv else 'OFF'}: {count} frames in {duration:.4f}s ({fps:.2f} fps)"
+        f"decoded: {count} frames in {duration:.4f}s ({fps:.2f} fps)"
     )
 
 
 if __name__ == "__main__":
     generate_source()
     print("Warming up...")
-    benchmark(True)
+    benchmark()
 
     print("\nRunning Benchmark...")
-    benchmark(False)
-    benchmark(True)
+    benchmark()

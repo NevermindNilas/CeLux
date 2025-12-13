@@ -14,12 +14,12 @@ namespace py = pybind11;
 	}
 
 VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force_8bit, Backend backend,
-                         const std::string& decode_accelerator, int cuda_device_index)
+                 const std::string& decode_accelerator, int cuda_device_index)
     : decoder(nullptr), rand_decoder(nullptr), currentIndex(0), start_frame(0),
       end_frame(-1), start_time(-1.0), end_time(-1.0), filePath(filePath),
       numThreads(numThreads), force_8bit(force_8bit), backend(backend),
       decodeAccelerator(celux::stringToDecodeAccelerator(decode_accelerator)),
-      cudaDeviceIndex(cuda_device_index)
+    cudaDeviceIndex(cuda_device_index)
 {
     CELUX_INFO("VideoReader constructor called with filePath: {}, decode_accelerator: {}", 
                filePath, decode_accelerator);
@@ -302,12 +302,26 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
             shape.push_back(static_cast<py::ssize_t>(dim));
         }
 
-        // Create numpy array that owns its own data by allocating and copying
-        // This ensures memory safety since the tensor buffer may be reused
-        py::array result(numpy_dtype, shape);
-        std::memcpy(result.mutable_data(), cpu_tensor.data_ptr(), 
-                    cpu_tensor.numel() * cpu_tensor.element_size());
-        return result;
+        // Zero-copy: expose the tensor's CPU buffer via NumPy and keep it alive.
+        std::vector<py::ssize_t> strides;
+        strides.reserve(static_cast<size_t>(cpu_tensor.dim()));
+        const auto elem_size = static_cast<py::ssize_t>(cpu_tensor.element_size());
+        for (int64_t stride_elems : cpu_tensor.strides())
+        {
+            strides.push_back(static_cast<py::ssize_t>(stride_elems) * elem_size);
+        }
+
+        auto* owner = new torch::Tensor(cpu_tensor);
+        py::capsule base(owner, [](void* p) {
+            delete reinterpret_cast<torch::Tensor*>(p);
+        });
+
+        return py::array(
+            numpy_dtype,
+            shape,
+            strides,
+            cpu_tensor.data_ptr(),
+            base);
     }
 
     // Default: return as torch::Tensor
@@ -540,7 +554,6 @@ void VideoReader::ensureRandDecoder()
                                     : torch::Device(torch::kCPU);
         rand_decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
                                                      decodeAccelerator, cudaDeviceIndex);
-        rand_decoder->setLibyuvEnabled(libyuv_enabled);
         rand_decoder->setForce8Bit(force_8bit);
     }
 }
@@ -590,7 +603,7 @@ torch::Tensor VideoReader::decodeFrameAt(double timestamp_seconds)
 
         if (ts + 1e-9 >= timestamp_seconds - half)
         {
-            out_frame = buf.clone(); // clone to detach from temp buffer
+            out_frame = buf;
             hit_ts = ts;
             break;
         }
@@ -829,9 +842,9 @@ int VideoReader::length() const
 
 torch::ScalarType VideoReader::findTypeFromBitDepth()
 {
-    if (force_8bit || libyuv_enabled)
+    if (force_8bit)
     {
-        CELUX_DEBUG("Forcing tensor data type to torch::kUInt8 (force_8bit={} or libyuv_enabled={})", force_8bit, libyuv_enabled);
+        CELUX_DEBUG("Forcing tensor data type to torch::kUInt8 (force_8bit={})", force_8bit);
         return torch::kUInt8;
     }
     int bit_depth = decoder->getBitDepth();
@@ -895,15 +908,6 @@ VideoReader::createEncoder(const std::string& outputPath) const
         /* audioSampleRate*/ asr,
         /* audioChannels  */ ach,
         /* audioCodec     */ acodec);
-}
-
-void VideoReader::set_libyuv_enabled(bool enabled)
-{
-    libyuv_enabled = enabled;
-    if (decoder)
-        decoder->setLibyuvEnabled(enabled);
-    if (rand_decoder)
-        rand_decoder->setLibyuvEnabled(enabled);
 }
 
 std::string VideoReader::getPixelFormat() const

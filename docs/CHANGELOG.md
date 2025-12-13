@@ -1,6 +1,25 @@
 
 ## 📈 Changelog
 
+### **Version 0.8.2 (2025-12-13)**
+
+#### **Build & Performance**
+- **Improved:** Host builds now default to enabling AVX2 and Release LTO/IPO (when supported) for better throughput on modern CPUs.
+- **Added:** A baseline (no-AVX2) build option/preset for users who need broader CPU compatibility.
+ - **Improved:** Reduced frame copies and heap churn across hot paths: removed redundant `av_frame` clones in random-access paths and reduced lock hold time in the decoder producer/consumer queue.
+ - **Improved:** `VideoReader` NumPy backend now exposes zero-copy views (py::array backed by the CPU tensor) to avoid an extra memcpy on `numpy` backend outputs.
+ - **Improved:** `AutoToRGB` reuses `sws_getCachedContext` reducing repeated `sws_getContext` allocations and improving conversion throughput.
+
+#### **Quality & Tests**
+- **Updated:** `tests/benchmark_libyuv.py` now focuses on measuring decode throughput and reporting performance consistently.
+
+#### **Color Conversion & Performance**
+- **Improved:** `AutoToRGB` converter: better bit-depth handling and improved conversion paths that reduce conversion error and increase throughput for common scenarios. 10-bit content now benefits from an improved conversion path (10-bit -> 8-bit conversion handled in an optimized path when requested), while higher bit-depth sources are preserved when appropriate.
+- **Enhanced:** More accurate deductions for unspecified pixel metadata (color space, color range, primaries), resulting in fewer mismatches vs. FFmpeg when metadata is omitted from inputs.
+ - **Improved:** When possible we now route 8-bit and down-converted 10-bit inputs through libyuv's fast paths and preserve >8-bit outputs for downstream consumers.
+
+---
+
 ### **Version 0.8.1 (2025-12-04)**
 
 #### **Build System & CI Fixes**

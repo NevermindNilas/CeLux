@@ -54,7 +54,6 @@ class Decoder
     virtual VideoProperties getVideoProperties() const;
     virtual bool isOpen() const;
     virtual void close();
-    void setLibyuvEnabled(bool enabled);
     void setForce8Bit(bool enabled);
     int getBitDepth() const;
 
@@ -82,7 +81,6 @@ class Decoder
     int numThreads;
     VideoProperties properties;
     Frame frame;
-    bool libyuv_enabled = true;
     bool force_8bit = false;
     int audioStreamIndex = -1;
     AVCodecContextPtr audioCodecCtx;

@@ -18,11 +18,21 @@ from celux import VideoReader
 
 vr = VideoReader("input.mp4")
 
+# Single frame access
 frame_ts = vr.frame_at(12.34)   # by timestamp
 frame_idx = vr.frame_at(1000)   # by frame index
 
 print(frame_ts.shape, frame_ts.dtype)
 print(frame_idx.shape, frame_idx.dtype)
+
+# Batch frame access (NEW!)
+len(vr)                              # frame count
+vr.shape                             # (frames, H, W, C)
+vr.get_batch([0, 10, 20])            # [3, H, W, C]
+vr.get_batch(range(0, 100, 10))      # [10, H, W, C]
+vr.get_batch_range(0, 100, 10)       # [10, H, W, C]
+vr[0:100:10]                         # [10, H, W, C]
+vr[[-1, -2, -3]]                     # negative indexing
 ```
 
 
@@ -37,6 +47,7 @@ print(frame_idx.shape, frame_idx.dtype)
 
 - ⚡ **Ultra‑Fast Video Decoding:** Lightning‑fast decode times for full‑HD videos using hardware acceleration.
 - 🔗 **Direct Decoding to Tensors:** Frames come out as PyTorch tensors (`HWC` layout by default).
+- 📦 **Batch Frame Reading:** Efficiently decode multiple frames at once with automatic deduplication and smart seeking.
 - 🔊 **Simplified Audio Encoding:** One call to `encode_audio_tensor()` streams raw PCM into the encoder.
 - 🔄 **Easy Integration:** Drop‑in replacement for your existing Python + PyTorch workflows.
 
@@ -75,6 +86,41 @@ with reader.create_encoder("/path/to/output.mp4") as enc:
 
 print("Done!")
 ```
+
+## 📦 Batch Frame Reading
+
+CeLux now supports efficient batch frame reading, allowing you to decode multiple frames at once with smart optimization:
+
+```python
+from celux import VideoReader
+
+vr = VideoReader("video.mp4")
+
+# Basic batch reading
+batch = vr.get_batch([0, 10, 20])           # Get specific frames → [3, H, W, C]
+batch = vr.get_batch(range(0, 100, 10))     # Use range objects → [10, H, W, C]
+batch = vr.get_batch_range(0, 100, 10)      # Helper method → [10, H, W, C]
+
+# Pythonic slice notation
+batch = vr[0:100:10]                         # Slice notation → [10, H, W, C]
+single = vr[42]                              # Single frame still works
+
+# Advanced features
+batch = vr[[-3, -2, -1]]                     # Negative indexing
+batch = vr.get_batch([5, 10, 5, 20])         # Automatic deduplication
+
+# Properties
+len(vr)                                      # Total frame count
+vr.shape                                     # (frames, H, W, C)
+vr.frame_count                               # Same as len(vr)
+```
+
+### Batch Reading Performance
+
+The batch decoder is optimized for performance:
+- **Deduplication**: Frames requested multiple times are decoded once and copied
+- **Smart Seeking**: Only seeks when necessary (backward jumps or gaps > 30 frames)
+- **Sequential Optimization**: Consecutive frames decoded efficiently without extra seeks
 
 ## 📄 License
 

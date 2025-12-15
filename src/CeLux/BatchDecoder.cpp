@@ -3,6 +3,7 @@
 #include "error/CxException.hpp"
 #include <algorithm>
 #include <set>
+#include <stdexcept>
 
 extern "C" {
 #include <libavutil/imgutils.h>

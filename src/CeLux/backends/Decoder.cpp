@@ -1,5 +1,6 @@
 // Decoder.cpp
 #include "Decoder.hpp"
+#include "BatchDecoder.hpp"
 #include <Factory.hpp>
 #include "conversion/cpu/AutoToRGB.hpp"
 
@@ -1228,6 +1229,70 @@ void Decoder::decodingLoop()
             avcodec_send_packet(codecCtx.get(), nullptr);
         }
     }
+}
+
+int64_t Decoder::get_frame_count()
+{
+    if (cached_frame_count_ >= 0) {
+        return cached_frame_count_;
+    }
+
+    AVStream* stream = formatCtx->streams[videoStreamIndex];
+    
+    // Try nb_frames first (most reliable if available)
+    if (stream->nb_frames > 0) {
+        cached_frame_count_ = stream->nb_frames;
+        CELUX_DEBUG("Frame count from nb_frames: {}", cached_frame_count_);
+        return cached_frame_count_;
+    }
+
+    // Fallback: calculate from duration and frame rate
+    double duration = 0.0;
+    if (stream->duration != AV_NOPTS_VALUE) {
+        duration = stream->duration * av_q2d(stream->time_base);
+    } else if (formatCtx->duration != AV_NOPTS_VALUE) {
+        duration = formatCtx->duration / static_cast<double>(AV_TIME_BASE);
+    }
+
+    double fps = av_q2d(stream->avg_frame_rate.num > 0 ? stream->avg_frame_rate : stream->r_frame_rate);
+    
+    if (duration > 0.0 && fps > 0.0) {
+        cached_frame_count_ = static_cast<int64_t>(duration * fps + 0.5);
+        CELUX_DEBUG("Frame count from duration*fps: {}", cached_frame_count_);
+    } else {
+        cached_frame_count_ = 0;
+        CELUX_WARN("Unable to determine frame count");
+    }
+
+    return cached_frame_count_;
+}
+
+torch::Tensor Decoder::decode_batch(const std::vector<int64_t>& indices)
+{
+    CELUX_DEBUG("decode_batch called with {} indices", indices.size());
+    
+    if (!batch_decoder_) {
+        // Lazy initialize batch decoder with same config as main decoder
+        BatchDecoder::Config config;
+        config.height = properties.height;
+        config.width = properties.width;
+        config.channels = 3;
+        config.dtype = force_8bit ? torch::kUInt8 : 
+                       (properties.bitDepth <= 8 ? torch::kUInt8 : torch::kUInt16);
+        config.device = torch::kCPU; // Always decode to CPU first
+        config.normalize = false;
+        
+        batch_decoder_ = std::make_unique<BatchDecoder>(config);
+        CELUX_DEBUG("Batch decoder initialized");
+    }
+
+    return batch_decoder_->decode_batch(
+        indices,
+        formatCtx.get(),
+        codecCtx.get(),
+        videoStreamIndex,
+        nullptr, // SwsContext managed internally by BatchDecoder
+        get_frame_count());
 }
 
 } // namespace celux

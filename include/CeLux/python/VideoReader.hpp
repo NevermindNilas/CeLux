@@ -256,6 +256,19 @@ class VideoReader
      */
     void reset();
 
+    /**
+     * @brief Get the frame count from metadata (no pre-scanning).
+     * @return int64_t Total number of frames in the video.
+     */
+    int64_t getFrameCount() const;
+
+    /**
+     * @brief Decode a batch of frames at specified indices.
+     * @param indices Vector of frame indices to decode.
+     * @return torch::Tensor Batch tensor of shape [B, H, W, C].
+     */
+    torch::Tensor decodeBatch(const std::vector<int64_t>& indices);
+
   private:
     void ensureRandDecoder();
     bool seekToFrame(int frame_number);

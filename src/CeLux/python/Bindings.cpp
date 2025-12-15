@@ -123,6 +123,10 @@ Uses the secondary decoder; does not disturb iteration.)doc")
         .def("frame_at", py::overload_cast<int>(&VideoReader::frameAt),
              R"doc(Return the frame at or after the given frame index.
 Uses the secondary decoder; does not disturb iteration.)doc")
+        .def("get_frame_count", &VideoReader::getFrameCount,
+             "Get total frame count from metadata (no pre-scanning)")
+        .def("decode_batch", &VideoReader::decodeBatch, py::arg("indices"),
+             "Decode a batch of frames at specified indices, returning [B,H,W,C] tensor")
 
         .def(
             "__enter__",

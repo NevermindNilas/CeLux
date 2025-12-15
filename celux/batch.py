@@ -161,6 +161,8 @@ class BatchMixin:
     @property
     def frame_count(self) -> int:
         """Total number of frames in the video (from metadata)."""
+        # Use get_frame_count which caches the result and is specifically
+        # designed for batch operations
         return self._decoder.get_frame_count()
     
     @property

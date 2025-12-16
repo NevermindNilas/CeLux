@@ -16,12 +16,28 @@ import torch
 from ._celux import (
     __version__,
     __cuda_support__,
-    VideoReader,
+    VideoReader as _VideoReaderBase,
     VideoEncoder,
     Audio,
     set_log_level,
     LogLevel,
 )
+from .batch import BatchMixin
+
+
+# Create enhanced VideoReader with batch support
+class VideoReader(BatchMixin, _VideoReaderBase):
+    """
+    VideoReader with batch frame reading support.
+    
+    Inherits from BatchMixin to provide efficient batch decoding capabilities
+    while maintaining all original VideoReader functionality.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Store decoder reference for batch operations
+        self._decoder = self
+
 
 __all__ = [
     "__version__",

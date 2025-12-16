@@ -915,3 +915,22 @@ std::string VideoReader::getPixelFormat() const
     const char* name = av_get_pix_fmt_name(properties.pixelFormat);
     return name ? std::string(name) : "Unknown";
 }
+
+int64_t VideoReader::getFrameCount() const
+{
+    return decoder->get_frame_count();
+}
+
+torch::Tensor VideoReader::decodeBatch(const std::vector<int64_t>& indices)
+{
+    CELUX_DEBUG("VideoReader::decodeBatch called with {} indices", indices.size());
+    
+    // Use the main decoder for batch operations
+    torch::Tensor batch;
+    {
+        py::gil_scoped_release release;
+        batch = decoder->decode_batch(indices);
+    }
+    
+    return batch;
+}

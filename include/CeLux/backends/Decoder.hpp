@@ -9,9 +9,12 @@
 #include <condition_variable>
 #include <queue>
 #include <atomic>
+#include <memory>
 
 namespace celux
 {
+
+class BatchDecoder; // Forward declaration
 
 class Decoder
 {
@@ -63,6 +66,10 @@ class Decoder
     bool extractAudioToFile(const std::string& outputFilePath);
     torch::Tensor getAudioTensor();
 
+    // Batch decoding support
+    int64_t get_frame_count();
+    torch::Tensor decode_batch(const std::vector<int64_t>& indices);
+
   protected:
     void initialize(const std::string& filePath);
     void setProperties();
@@ -105,5 +112,9 @@ class Decoder
     void startDecodingThread();
     void stopDecodingThread();
     void clearQueue();
+
+    // Batch decoder instance (lazy initialized)
+    std::unique_ptr<BatchDecoder> batch_decoder_;
+    int64_t cached_frame_count_ = -1;
 };
 } // namespace celux

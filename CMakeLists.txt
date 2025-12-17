@@ -35,6 +35,50 @@ option(CELUX_ENABLE_LTO  "Enable IPO/LTO for Release builds" ON)
 
 # --- Enable CUDA language if requested ---
 if(CELUX_ENABLE_CUDA)
+  # Try to help CMake find CUDA if not already set
+  if(NOT CMAKE_CUDA_COMPILER)
+    # Check CUDA_PATH environment variable (set by NVIDIA installer)
+    if(DEFINED ENV{CUDA_PATH})
+      set(_cuda_path "$ENV{CUDA_PATH}")
+      file(TO_CMAKE_PATH "${_cuda_path}" _cuda_path)
+      if(WIN32)
+        set(_nvcc_candidate "${_cuda_path}/bin/nvcc.exe")
+      else()
+        set(_nvcc_candidate "${_cuda_path}/bin/nvcc")
+      endif()
+      if(EXISTS "${_nvcc_candidate}")
+        set(CMAKE_CUDA_COMPILER "${_nvcc_candidate}" CACHE FILEPATH "CUDA compiler" FORCE)
+        message(STATUS "Found nvcc via CUDA_PATH: ${CMAKE_CUDA_COMPILER}")
+      endif()
+    endif()
+
+    # Also check CUDAToolkit_ROOT
+    if(NOT CMAKE_CUDA_COMPILER AND DEFINED ENV{CUDAToolkit_ROOT})
+      set(_cuda_root "$ENV{CUDAToolkit_ROOT}")
+      file(TO_CMAKE_PATH "${_cuda_root}" _cuda_root)
+      if(WIN32)
+        set(_nvcc_candidate "${_cuda_root}/bin/nvcc.exe")
+      else()
+        set(_nvcc_candidate "${_cuda_root}/bin/nvcc")
+      endif()
+      if(EXISTS "${_nvcc_candidate}")
+        set(CMAKE_CUDA_COMPILER "${_nvcc_candidate}" CACHE FILEPATH "CUDA compiler" FORCE)
+        message(STATUS "Found nvcc via CUDAToolkit_ROOT: ${CMAKE_CUDA_COMPILER}")
+      endif()
+    endif()
+  endif()
+
+  # Newer MSVC toolsets (e.g. VS 2026) may not yet be officially supported by
+  # the installed CUDA Toolkit. NVCC hard-errors during compiler identification
+  # unless we opt in to the override.
+  #
+  # We only enable this automatically for MSVC versions newer than VS 2022
+  # (MSVC 19.3x => MSVC_VERSION 1930-1939).
+  if(MSVC AND MSVC_VERSION GREATER 1939)
+    string(APPEND CMAKE_CUDA_FLAGS_INIT " -allow-unsupported-compiler")
+    message(STATUS "MSVC ${MSVC_VERSION} detected; adding NVCC flag: -allow-unsupported-compiler")
+  endif()
+
   include(CheckLanguage)
   check_language(CUDA)
   if(CMAKE_CUDA_COMPILER)
@@ -48,6 +92,7 @@ if(CELUX_ENABLE_CUDA)
     endif()
   else()
     message(WARNING "CELUX_ENABLE_CUDA is ON but no CUDA compiler found. CUDA features disabled.")
+    message(WARNING "Set CUDA_PATH environment variable or CMAKE_CUDA_COMPILER to enable CUDA.")
     set(CELUX_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA support in CeLux" FORCE)
   endif()
 endif()

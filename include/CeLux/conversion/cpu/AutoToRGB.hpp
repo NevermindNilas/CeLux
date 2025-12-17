@@ -56,9 +56,26 @@ class AutoToRGBConverter : public ConverterBase
     void convert(celux::Frame& frame, void* buffer) override
     {
         AVFrame* av_frame = frame.get();
+
+        // Input validation
+        if (!av_frame || !av_frame->data[0])
+        {
+            throw std::runtime_error("AutoToRGBConverter: Invalid input frame (null frame or data)");
+        }
+        if (!buffer)
+        {
+            throw std::runtime_error("AutoToRGBConverter: Null output buffer");
+        }
+
         const AVPixelFormat src_fmt = frame.getPixelFormat();
         const int width = frame.getWidth();
         const int height = frame.getHeight();
+
+        // Validate dimensions
+        if (width <= 0 || height <= 0)
+        {
+            throw std::runtime_error("AutoToRGBConverter: Invalid frame dimensions");
+        }
 
         // 1) Derive effective bit depth from the frame itself
         const int bit_depth = effective_bit_depth_from_frame(av_frame);
@@ -157,7 +174,12 @@ class AutoToRGBConverter : public ConverterBase
             int ok = sws_setColorspaceDetails(sws_ctx, srcCoeffs, srcRange, dstCoeffs,
                                               1, 0, 1 << 16, 1 << 16);
             if (ok < 0)
-                CELUX_WARN("sws_setColorspaceDetails returned {}", ok);
+            {
+                throw std::runtime_error(
+                    "AutoToRGBConverter: Failed to configure color space details (error=" +
+                    std::to_string(ok) + ", colorspace=" + std::to_string(src_colorspace) +
+                    ", range=" + std::to_string(src_color_range) + ")");
+            }
 
             last_src_fmt = src_fmt;
             last_dst_fmt = dst_fmt;

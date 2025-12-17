@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "nelux"
-version = "0.8.2"
+version = "0.8.3"
 readme = "README.md"
 authors = [
     {name = "Nilas Tiago", email = "nilascontact@gmail.com"},
@@ -28,7 +28,10 @@ Changelog = "https://github.com/NevermindNilas/CeLux/blob/master/docs/CHANGELOG.
 Issues = "https://github.com/NevermindNilas/CeLux/issues"
 
 [tool.scikit-build]
+cmake.build-type = "Release"
+ninja.make-fallback = true
 cmake.args = [
+  "-G", "Ninja",
   "-DCMAKE_TOOLCHAIN_FILE=$ENV{VCPKG_TOOLCHAIN_FILE}",
   "-DVCPKG_TARGET_TRIPLET=$ENV{VCPKG_TARGET_TRIPLET}",
   "-DCMAKE_PREFIX_PATH=$ENV{VCPKG_ROOT}/installed/$ENV{VCPKG_TARGET_TRIPLET}",

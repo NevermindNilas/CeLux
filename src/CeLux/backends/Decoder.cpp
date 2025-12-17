@@ -1273,15 +1273,17 @@ torch::Tensor Decoder::decode_batch(const std::vector<int64_t>& indices)
     
     if (!batch_decoder_) {
         // Lazy initialize batch decoder with same config as main decoder
-        BatchDecoder::Config config;
-        config.height = properties.height;
-        config.width = properties.width;
-        config.channels = 3;
-        config.dtype = force_8bit ? torch::kUInt8 : 
-                       (properties.bitDepth <= 8 ? torch::kUInt8 : torch::kUInt16);
-        config.device = torch::kCPU; // Always decode to CPU first
-        config.normalize = false;
-        
+        // Use aggregate initialization (positional) for C++17 compatibility
+        BatchDecoder::Config config{
+            properties.height,                    // height
+            properties.width,                     // width
+            3,                                    // channels
+            force_8bit ? torch::kUInt8 :          // dtype
+                (properties.bitDepth <= 8 ? torch::kUInt8 : torch::kUInt16),
+            torch::kCPU,                          // device - always decode to CPU first
+            false                                 // normalize
+        };
+
         batch_decoder_ = std::make_unique<BatchDecoder>(config);
         CELUX_DEBUG("Batch decoder initialized");
     }

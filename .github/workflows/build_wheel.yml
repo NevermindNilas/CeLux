@@ -86,27 +86,33 @@ jobs:
       with:
         cuda: '12.6.3'
         method: 'network'
-        sub-packages: '["nvcc", "cudart"]'
+        sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+
+    - name: Verify CUDA installation
+      shell: bash
+      run: |
+        echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
+        ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
+        "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
 
     - name: Build Windows wheel
       shell: bash
       env:
         CMAKE_GENERATOR: Ninja
         SKBUILD_CONFIG: Release
-        VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
-        VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-        VCPKG_TARGET_TRIPLET:  x64-windows-release
+        VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+        VCPKG_TOOLCHAIN_FILE: ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+        VCPKG_TARGET_TRIPLET: x64-windows-release
         CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
-        CMAKE_ARGS: >-
-          -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_TARGET_TRIPLET=x64-windows-release
-          -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
-          -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
-          -DCELUX_ENABLE_CUDA=ON
-          -DCMAKE_CUDA_COMPILER="${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe"
+        CUDACXX: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe
       run: |
-        echo "Checking nvcc version..."
-        "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
+        # Convert CUDA path to CMake-compatible format
+        CUDA_PATH_CMAKE=$(echo "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" | sed 's|\\|/|g')
+
+        # Set CMAKE_ARGS with proper escaping
+        export CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-release -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg -DCELUX_ENABLE_CUDA=ON -DCMAKE_CUDA_COMPILER=${CUDA_PATH_CMAKE}/bin/nvcc.exe"
+
+        echo "CMAKE_ARGS: $CMAKE_ARGS"
         python -m pip wheel . --no-deps -w dist -v
 
     - name: Verify dav1d.dll is bundled in wheel
@@ -118,6 +124,14 @@ jobs:
 
     - name: List final wheel contents
       run: unzip -l dist/*.whl | grep celux/
+
+    - name: Verify CUDA support in wheel
+      shell: bash
+      run: |
+        echo "=== Installing wheel and checking CUDA support ==="
+        pip install dist/*.whl --force-reinstall
+        python -c "import celux; print(f'CUDA support: {celux.__cuda_support__}'); assert celux.__cuda_support__ == True, 'CUDA support not enabled in wheel!'"
+        echo "=== CUDA verification passed ==="
 
     - name: Upload Windows wheel
       uses: actions/upload-artifact@v4

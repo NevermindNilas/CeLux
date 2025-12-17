@@ -1,6 +1,28 @@
 
 ## 📈 Changelog
 
+### **Version 0.8.3 (2025-12-17)**
+
+#### **Color Conversion Robustness**
+- **Fixed:** Color space configuration errors in `AutoToRGBConverter` now throw exceptions instead of silently continuing with incorrect color matrices. This prevents subtle color shifts that were hard to debug.
+- **Fixed:** CUDA decoder no longer silently falls back to NV12 conversion for unknown pixel formats. Unsupported formats now throw explicit errors with a list of supported formats.
+- **Added:** Input validation for all color conversion paths:
+  - Null frame/buffer checks before conversion
+  - Frame dimension validation
+  - Hardware frames context validation for CUDA
+- **Fixed:** SMPTE 240M color space now properly maps to its dedicated conversion matrix instead of approximating with BT.601.
+- **Added:** FCC color space support in CUDA decoder color space mapping.
+
+#### **Build & CI**
+- **Fixed:** GitHub Actions CUDA build configuration - improved CMAKE_ARGS handling and path escaping for nvcc compiler.
+- **Added:** CUDA verification smoke test in CI to ensure wheels are built with CUDA support.
+- **Added:** `visual_studio_integration` CUDA sub-package for better MSVC compatibility in CI.
+- **Improved:** CMake now auto-detects CUDA compiler via `CUDA_PATH` and `CUDAToolkit_ROOT` environment variables.
+- **Improved:** Build defaults to Ninja generator for better CUDA compatibility with newer VS versions.
+- **Note:** Building with CUDA on Windows requires running from Developer Command Prompt when using Ninja generator.
+
+---
+
 ### **Version 0.8.2 (2025-12-13)**
 
 #### **Build & Performance**

@@ -111,8 +111,10 @@ extern void launchYuv444P16ToRgb24(
 enum ColorSpaceStandard {
     ColorSpaceStandard_BT709 = 1,
     ColorSpaceStandard_Unspecified = 2,
+    ColorSpaceStandard_FCC = 4,
     ColorSpaceStandard_BT470BG = 5,
     ColorSpaceStandard_BT601 = 6,
+    ColorSpaceStandard_SMPTE240M = 7,
     ColorSpaceStandard_BT2020 = 9
 };
 
@@ -124,19 +126,21 @@ enum ColorRange {
 
 // Helper to map FFmpeg color space to our constants
 // FFmpeg AVColorSpace values:
-// AVCOL_SPC_BT709 = 1, AVCOL_SPC_UNSPECIFIED = 2, AVCOL_SPC_BT470BG = 5,
-// AVCOL_SPC_SMPTE170M = 6 (same as BT.601), AVCOL_SPC_SMPTE240M = 7,
-// AVCOL_SPC_BT2020_NCL = 9, AVCOL_SPC_BT2020_CL = 10
+// AVCOL_SPC_BT709 = 1, AVCOL_SPC_UNSPECIFIED = 2, AVCOL_SPC_FCC = 4,
+// AVCOL_SPC_BT470BG = 5, AVCOL_SPC_SMPTE170M = 6 (same as BT.601),
+// AVCOL_SPC_SMPTE240M = 7, AVCOL_SPC_BT2020_NCL = 9, AVCOL_SPC_BT2020_CL = 10
 static int mapColorSpace(AVColorSpace cs, int width, int height) {
     switch (cs) {
         case AVCOL_SPC_BT709:
             return ColorSpaceStandard_BT709;
+        case AVCOL_SPC_FCC:
+            return ColorSpaceStandard_FCC;
         case AVCOL_SPC_BT470BG:
             return ColorSpaceStandard_BT470BG;
         case AVCOL_SPC_SMPTE170M:  // BT.601 / NTSC
             return ColorSpaceStandard_BT601;
         case AVCOL_SPC_SMPTE240M:
-            return ColorSpaceStandard_BT601;  // Close enough to BT.601
+            return ColorSpaceStandard_SMPTE240M;  // Proper SMPTE 240M matrix
         case AVCOL_SPC_BT2020_NCL:
         case AVCOL_SPC_BT2020_CL:
             return ColorSpaceStandard_BT2020;
@@ -420,15 +424,29 @@ void Decoder::initCodecContextWithHwAccel()
 
 void Decoder::transferAndConvertFrame(AVFrame* hwFrame, void* outputBuffer)
 {
+    // Input validation
+    if (!hwFrame)
+    {
+        throw CxException("CUDA DECODER: Null hardware frame provided");
+    }
+    if (!outputBuffer)
+    {
+        throw CxException("CUDA DECODER: Null output buffer provided");
+    }
+
     // hwFrame contains CUDA device pointers in data[0], data[1], etc.
     // For NV12: data[0] = Y plane, data[1] = UV plane (interleaved)
     // For YUV444: data[0] = Y, data[1] = U, data[2] = V (planar)
-    
+
     if (hwFrame->format != AV_PIX_FMT_CUDA)
     {
-        CELUX_WARN("CUDA DECODER: Expected CUDA frame, got format {}", hwFrame->format);
-        // Handle software frame fallback if needed
-        return;
+        throw CxException(std::string("CUDA DECODER: Expected CUDA frame format, got ") +
+                         av_get_pix_fmt_name(static_cast<AVPixelFormat>(hwFrame->format)));
+    }
+
+    if (!hwFrame->hw_frames_ctx)
+    {
+        throw CxException("CUDA DECODER: Missing hardware frames context");
     }
     
     int width = hwFrame->width;
@@ -523,21 +541,11 @@ void Decoder::transferAndConvertFrame(AVFrame* hwFrame, void* outputBuffer)
         
         default:
         {
-            // Unknown format - try NV12 as fallback (most common NVDEC output)
-            CELUX_WARN("CUDA DECODER: Unknown sw_format {}, attempting NV12 conversion",
-                       av_get_pix_fmt_name(swFormat));
-            
-            const uint8_t* yPlane = hwFrame->data[0];
-            const uint8_t* uvPlane = hwFrame->data[1];
-            int yPitch = hwFrame->linesize[0];
-            int uvPitch = hwFrame->linesize[1];
-            
-            launchNv12ToRgb24Separate(
-                yPlane, uvPlane, yPitch, uvPitch,
-                static_cast<uint8_t*>(outputBuffer), rgbPitch,
-                width, height, colorSpace, colorRange, cudaStream_
-            );
-            break;
+            // Unsupported format - throw explicit error instead of silent fallback
+            throw CxException(std::string("CUDA DECODER: Unsupported pixel format '") +
+                             av_get_pix_fmt_name(swFormat) + "' for GPU color conversion. "
+                             "Supported formats: NV12, P010LE, P016LE, YUV444P, YUV444P10LE, "
+                             "YUV444P12LE, YUV444P16LE. Consider using CPU decoder for this format.");
         }
     }
     

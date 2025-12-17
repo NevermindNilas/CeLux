@@ -8,6 +8,7 @@ celux/_celux.pyd
 # For me 
 setup_dev.ps1
 tests/generated_formats
+.claude/
 
 ffmpy.egg-info/*
 *.mp4

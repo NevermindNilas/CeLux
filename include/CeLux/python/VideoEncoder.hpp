@@ -42,6 +42,6 @@ class VideoEncoder
         std::optional<std::string> audioCodec);
 };
 
-} // namespace MageML
+} // namespace celux
 
 #endif // VIDEO_ENCODER_HPP

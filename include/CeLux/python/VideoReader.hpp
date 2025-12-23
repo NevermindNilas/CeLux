@@ -3,9 +3,10 @@
 
 #include "Decoder.hpp" // Ensure this includes the Filter class
 #include "Factory.hpp"
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
 #include <VideoEncoder.hpp>
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+
 
 namespace py = pybind11;
 
@@ -28,13 +29,14 @@ class VideoReader
      * @param numThreads Number of threads to use for decoding.
      * @param force_8bit Force 8-bit output regardless of source bit depth.
      * @param backend Output backend type ("pytorch" or "numpy"). Default is "pytorch".
-     * @param decode_accelerator Decode acceleration type ("cpu" or "nvdec"). Default is "cpu".
+     * @param decode_accelerator Decode acceleration type ("cpu" or "nvdec"). Default is
+     * "cpu".
      * @param cuda_device_index CUDA device index for NVDEC (default: 0).
      */
     VideoReader(const std::string& filePath,
-                int numThreads = static_cast<int>(std::thread::hardware_concurrency() / 2),
-                bool force_8bit = false,
-                Backend backend = Backend::PyTorch,
+                int numThreads = static_cast<int>(std::thread::hardware_concurrency() /
+                                                  2),
+                bool force_8bit = false, Backend backend = Backend::PyTorch,
                 const std::string& decode_accelerator = "cpu",
                 int cuda_device_index = 0);
 
@@ -50,26 +52,72 @@ class VideoReader
      * @return Shared pointer to a VideoEncoder pre-configured for resolution, fps, and
      * audio.
      */
-    std::shared_ptr<celux::VideoEncoder> createEncoder(const std::string& outputPath) const;
+    std::shared_ptr<celux::VideoEncoder>
+    createEncoder(const std::string& outputPath) const;
 
     // Direct property getters for performance
-    int getWidth() const { return properties.width; }
-    int getHeight() const { return properties.height; }
-    double getFps() const { return properties.fps; }
-    double getMinFps() const { return properties.min_fps; }
-    double getMaxFps() const { return properties.max_fps; }
-    double getDuration() const { return properties.duration; }
-    int getTotalFrames() const { return properties.totalFrames; }
-    bool getHasAudio() const { return properties.hasAudio; }
-    int getAudioBitrate() const { return properties.audioBitrate; }
-    int getAudioChannels() const { return properties.audioChannels; }
-    int getAudioSampleRate() const { return properties.audioSampleRate; }
-    std::string getAudioCodec() const { return properties.audioCodec; }
-    int getBitDepth() const { return properties.bitDepth; }
-    double getAspectRatio() const { return properties.aspectRatio; }
-    std::string getCodec() const { return properties.codec; }
+    int getWidth() const
+    {
+        return properties.width;
+    }
+    int getHeight() const
+    {
+        return properties.height;
+    }
+    double getFps() const
+    {
+        return properties.fps;
+    }
+    double getMinFps() const
+    {
+        return properties.min_fps;
+    }
+    double getMaxFps() const
+    {
+        return properties.max_fps;
+    }
+    double getDuration() const
+    {
+        return properties.duration;
+    }
+    int getTotalFrames() const
+    {
+        return properties.totalFrames;
+    }
+    bool getHasAudio() const
+    {
+        return properties.hasAudio;
+    }
+    int getAudioBitrate() const
+    {
+        return properties.audioBitrate;
+    }
+    int getAudioChannels() const
+    {
+        return properties.audioChannels;
+    }
+    int getAudioSampleRate() const
+    {
+        return properties.audioSampleRate;
+    }
+    std::string getAudioCodec() const
+    {
+        return properties.audioCodec;
+    }
+    int getBitDepth() const
+    {
+        return properties.bitDepth;
+    }
+    double getAspectRatio() const
+    {
+        return properties.aspectRatio;
+    }
+    std::string getCodec() const
+    {
+        return properties.codec;
+    }
     std::string getPixelFormat() const;
-    
+
     /**
      * @brief Get the properties of the video.
      *
@@ -83,7 +131,8 @@ class VideoReader
      * Depending on the configuration, returns either a torch::Tensor or a
      * numpy.ndarray. Shape is always HWC.
      *
-     * @return py::object The next frame (torch::Tensor or numpy.ndarray based on backend).
+     * @return py::object The next frame (torch::Tensor or numpy.ndarray based on
+     * backend).
      */
     py::object readFrame();
 
@@ -169,7 +218,6 @@ class VideoReader
      */
     void setRangeByTimestamps(double startTime, double endTime);
 
-    
     /**
      * @brief Retrieve the audio object for interaction.
      *
@@ -249,7 +297,8 @@ class VideoReader
     /**
      * @brief Context manager exit.
      */
-    void exit(const py::object& exc_type, const py::object& exc_value, const py::object& traceback);
+    void exit(const py::object& exc_type, const py::object& exc_value,
+              const py::object& traceback);
 
     /**
      * @brief Reset the reader to the beginning.

@@ -1,28 +1,31 @@
 ﻿// Python/VideoReader.cpp
-#include <torch/extension.h>
 #include "python/VideoReader.hpp"
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-#include <torch/torch.h> // Ensure you have included the necessary Torch headers
 #include <cstring> // For std::memcpy
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <torch/extension.h>
+#include <torch/torch.h> // Ensure you have included the necessary Torch headers
 
 namespace py = pybind11;
-#define CHECK_TENSOR(tensor)                                                  \
-	if (!tensor.defined() || tensor.numel() == 0)                              \
-	{                                                                         \
-		throw std::runtime_error("Invalid tensor: undefined or empty");        \
-	}
+#define CHECK_TENSOR(tensor)                                                           \
+    if (!tensor.defined() || tensor.numel() == 0)                                      \
+    {                                                                                  \
+        throw std::runtime_error("Invalid tensor: undefined or empty");                \
+    }
 
-VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force_8bit, Backend backend,
-                 const std::string& decode_accelerator, int cuda_device_index)
-    : decoder(nullptr), rand_decoder(nullptr), currentIndex(0), start_frame(0),
-      end_frame(-1), start_time(-1.0), end_time(-1.0), filePath(filePath),
-      numThreads(numThreads), force_8bit(force_8bit), backend(backend),
+VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force_8bit,
+                         Backend backend, const std::string& decode_accelerator,
+                         int cuda_device_index)
+    : decoder(nullptr), rand_decoder(nullptr), currentIndex(0), current_timestamp(0.0),
+      start_frame(0), end_frame(-1), start_time(-1.0), end_time(-1.0),
+      filePath(filePath), numThreads(numThreads), force_8bit(force_8bit),
+      backend(backend),
       decodeAccelerator(celux::stringToDecodeAccelerator(decode_accelerator)),
-    cudaDeviceIndex(cuda_device_index)
+      cudaDeviceIndex(cuda_device_index)
 {
-    CELUX_INFO("VideoReader constructor called with filePath: {}, decode_accelerator: {}", 
-               filePath, decode_accelerator);
+    CELUX_INFO(
+        "VideoReader constructor called with filePath: {}, decode_accelerator: {}",
+        filePath, decode_accelerator);
 
     if (numThreads > std::thread::hardware_concurrency())
         throw std::invalid_argument(
@@ -31,15 +34,17 @@ VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force
     try
     {
         // Determine the torch device based on decode accelerator
-        torch::Device torchDevice = (decodeAccelerator == celux::DecodeAccelerator::NVDEC) 
-                                    ? torch::Device(torch::kCUDA, cuda_device_index)
-                                    : torch::Device(torch::kCPU);
+        torch::Device torchDevice =
+            (decodeAccelerator == celux::DecodeAccelerator::NVDEC)
+                ? torch::Device(torch::kCUDA, cuda_device_index)
+                : torch::Device(torch::kCPU);
 
         // Main sequential decoder
         decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
                                                 decodeAccelerator, cuda_device_index);
         decoder->setForce8Bit(force_8bit);
-        CELUX_INFO("Main decoder created successfully with accelerator: {}", decode_accelerator);
+        CELUX_INFO("Main decoder created successfully with accelerator: {}",
+                   decode_accelerator);
 
         // Random-access decoder is now lazy-loaded in ensureRandDecoder()
 
@@ -75,7 +80,6 @@ void VideoReader::close()
     }
     CELUX_INFO("All decoders closed");
 }
-
 
 std::shared_ptr<VideoReader::Audio> VideoReader::getAudio()
 {
@@ -227,8 +231,10 @@ torch::Tensor VideoReader::decodeFrame()
 
     // Update current timestamp
     current_timestamp = frame_timestamp;
+    currentIndex++;
 
-    CELUX_TRACE("Frame decoded successfully at timestamp: {}", current_timestamp);
+    CELUX_TRACE("Frame decoded successfully index={}, timestamp={}", currentIndex - 1,
+                current_timestamp);
     return tensor;
 }
 
@@ -257,7 +263,7 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
         // Convert torch::Tensor to numpy array
         // Ensure tensor is on CPU and contiguous
         torch::Tensor cpu_tensor = t.cpu().contiguous();
-        
+
         // Determine numpy dtype based on torch dtype
         py::dtype numpy_dtype;
         switch (cpu_tensor.scalar_type())
@@ -290,7 +296,8 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
             numpy_dtype = py::dtype::of<double>();
             break;
         default:
-            CELUX_WARN("Unhandled torch dtype {}, defaulting to uint8", static_cast<int>(cpu_tensor.scalar_type()));
+            CELUX_WARN("Unhandled torch dtype {}, defaulting to uint8",
+                       static_cast<int>(cpu_tensor.scalar_type()));
             numpy_dtype = py::dtype::of<uint8_t>();
             break;
         }
@@ -312,16 +319,10 @@ py::object VideoReader::tensorToOutput(const torch::Tensor& t) const
         }
 
         auto* owner = new torch::Tensor(cpu_tensor);
-        py::capsule base(owner, [](void* p) {
-            delete reinterpret_cast<torch::Tensor*>(p);
-        });
+        py::capsule base(owner,
+                         [](void* p) { delete reinterpret_cast<torch::Tensor*>(p); });
 
-        return py::array(
-            numpy_dtype,
-            shape,
-            strides,
-            cpu_tensor.data_ptr(),
-            base);
+        return py::array(numpy_dtype, shape, strides, cpu_tensor.data_ptr(), base);
     }
 
     // Default: return as torch::Tensor
@@ -334,7 +335,6 @@ torch::Tensor VideoReader::makeLikeOutputTensor() const
         {properties.height, properties.width, 3},
         torch::TensorOptions().dtype(tensor.dtype()).device(tensor.device()));
 }
-
 
 bool VideoReader::seek(double timestamp)
 {
@@ -447,61 +447,41 @@ py::object VideoReader::operator[](py::object key)
         return (properties.duration > 0.0) && (ts >= properties.duration - eps);
     };
 
-    auto advance_until_timestamp = [&](double target_ts) -> torch::Tensor
-    {
-        const int cap =
-            (properties.fps > 0.0) ? static_cast<int>(properties.fps) + 8 : 8;
-        torch::Tensor f;
-        for (int i = 0; i < cap; ++i)
-        {
-            f = decodeFrame();
-            if (!f.defined() || f.numel() == 0)
-            {
-                // Try random-access fallback at a safe ts
-                try
-                {
-                    return decodeFrameAt(clamp_ts(target_ts));
-                }
-                catch (...)
-                {
-                    return torch::Tensor();
-                }
-            }
-            if (current_timestamp + 1e-9 >= target_ts - half)
-                return f;
-        }
-        // Safety cap hit → try random-access
-        try
-        {
-            return decodeFrameAt(clamp_ts(target_ts));
-        }
-        catch (...)
-        {
-            return torch::Tensor();
-        }
-    };
+    const double smart_seek_threshold_sec = 5.0;
 
     // ----- int index -----
     if (py::isinstance<py::int_>(key))
     {
         long long req = norm_idx(key.cast<long long>());
-        check_idx_range(req); // do NOT silently clamp; be Pythonic
+        check_idx_range(req);
 
-        const double target_ts =
-            (properties.fps > 0.0) ? (static_cast<double>(req) / properties.fps) : 0.0;
+        // Calculate distance in frames and time
+        long long diff_frames = req - currentIndex;
+        double diff_sec =
+            (properties.fps > 0.0) ? (double)diff_frames / properties.fps : 0.0;
 
-        const double diff = std::abs(target_ts - current_timestamp);
-        if (diff <= tol)
+        // Smart Seek Check:
+        // If we are moving forward and it's within threshold, use main decoder
+        // sequentially. Otherwise, use random access (could be backwards or a large
+        // forward jump).
+        if (diff_frames >= 0 && diff_sec <= smart_seek_threshold_sec)
         {
-            torch::Tensor f = advance_until_timestamp(target_ts);
-            if (!f.defined() || f.numel() == 0)
+            torch::Tensor f;
+            for (long long i = 0; i <= diff_frames; ++i)
             {
-                // Optional: treat tail as iteration end (not recommended for
-                // __getitem__) if (is_tail(target_ts)) throw py::stop_iteration();
-                throw std::runtime_error("Failed to decode frame near requested index");
+                f = decodeFrame();
+                if (!f.defined() || f.numel() == 0)
+                {
+                    throw std::runtime_error(
+                        "Failed to decode frame near index " + std::to_string(req) +
+                        " (last successful index: " + std::to_string(currentIndex - 1) +
+                        ")");
+                }
             }
             return tensorToOutput(f);
         }
+
+        // Fallback to random decoder
         return frameAt(static_cast<int>(req));
     }
 
@@ -510,18 +490,43 @@ py::object VideoReader::operator[](py::object key)
     {
         double ts = key.cast<double>();
         check_ts_range(ts);
-        ts = clamp_ts(ts); // keep away from the ambiguous very last timestamp
+        ts = clamp_ts(ts);
 
-        const double diff = std::abs(ts - current_timestamp);
-        if (diff <= tol)
+        // Use a similar logic for timestamps: calculate approximate distance
+        const double diff = ts - current_timestamp;
+
+        if (diff >= -tol && diff <= smart_seek_threshold_sec)
         {
-            torch::Tensor f = advance_until_timestamp(ts);
-            if (!f.defined() || f.numel() == 0)
+            // For timestamps, we reuse the existing advance lambda or inline logic.
+            // Given the complexity of PTS matching, we use the timestamp-based loop
+            // here.
+
+            // Reuse logic from old advance_until_timestamp lambda
+            const int cap =
+                (properties.fps > 0.0)
+                    ? static_cast<int>(properties.fps * smart_seek_threshold_sec) + 8
+                    : 150;
+
+            torch::Tensor f;
+            for (int i = 0; i < cap; ++i)
             {
-                throw std::runtime_error(
-                    "Failed to decode frame near requested timestamp");
+                // If we are already close enough, we might need a frame?
+                // But wait, if diff is very small positive, we still need to decode at
+                // least once if we want to BE SURE we have the frame at/after ts.
+
+                // If we are already >= ts - half, should we return the "current" frame?
+                // The VideoReader doesn't store it. So we must have decoded it earlier.
+                // This is why operator[] is tricky with stateful main decoder.
+
+                // For now, let's keep it simple: if we are close, just decode.
+                f = decodeFrame();
+                if (!f.defined() || f.numel() == 0)
+                    break;
+
+                if (current_timestamp + 1e-9 >= ts - half)
+                    return tensorToOutput(f);
             }
-            return tensorToOutput(f);
+            // If loop fails, fall back
         }
         return frameAt(ts);
     }
@@ -540,7 +545,7 @@ void VideoReader::reset()
     currentIndex = 0;
     current_timestamp = 0.0;
     hasBufferedFrame = false;
-    // Reset range if needed, or keep it? Usually reset() implies full reset, 
+    // Reset range if needed, or keep it? Usually reset() implies full reset,
     // but here we just reset iteration state.
 }
 
@@ -549,11 +554,12 @@ void VideoReader::ensureRandDecoder()
     if (!rand_decoder)
     {
         CELUX_INFO("Initializing random-access decoder (lazy load)");
-        torch::Device torchDevice = (decodeAccelerator == celux::DecodeAccelerator::NVDEC) 
-                                    ? torch::Device(torch::kCUDA, cudaDeviceIndex)
-                                    : torch::Device(torch::kCPU);
-        rand_decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
-                                                     decodeAccelerator, cudaDeviceIndex);
+        torch::Device torchDevice =
+            (decodeAccelerator == celux::DecodeAccelerator::NVDEC)
+                ? torch::Device(torch::kCUDA, cudaDeviceIndex)
+                : torch::Device(torch::kCPU);
+        rand_decoder = celux::Factory::createDecoder(
+            torchDevice, filePath, numThreads, decodeAccelerator, cudaDeviceIndex);
         rand_decoder->setForce8Bit(force_8bit);
     }
 }
@@ -645,8 +651,6 @@ py::object VideoReader::frameAt(int frame_index)
     return tensorToOutput(frame);
 }
 
-
-
 bool VideoReader::seekToFrame(int frame_number)
 {
     CELUX_INFO("Seeking to frame number: {}", frame_number);
@@ -658,7 +662,6 @@ bool VideoReader::seekToFrame(int frame_number)
         return false;
     }
     double seek_timestamp = frame_number / properties.fps;
-
 
     // Seek to the closest keyframe first
     bool success = decoder->seekToNearestKeyframe(seek_timestamp);
@@ -679,7 +682,6 @@ bool VideoReader::seekToFrame(int frame_number)
     CELUX_INFO("Exact seek to frame {} successful", frame_number);
     return true;
 }
-
 
 VideoReader& VideoReader::iter()
 {
@@ -794,8 +796,9 @@ py::object VideoReader::next()
     // -- Now check if we exceeded the time range AFTER decoding.
     if (start_time >= 0.0 && end_time > 0.0)
     {
-        // If the current frame's timestamp is >= end_time, skip/stop. end time + 1 frame
-        if (current_timestamp > end_time + 1/properties.fps)
+        // If the current frame's timestamp is >= end_time, skip/stop. end time + 1
+        // frame
+        if (current_timestamp > end_time + 1 / properties.fps)
         {
             CELUX_DEBUG("Frame timestamp {} >= end_time {}, skipping frame.",
                         current_timestamp, end_time);
@@ -812,12 +815,10 @@ py::object VideoReader::next()
         }
     }
 
-    currentIndex++;
-    CELUX_TRACE("Returning frame index={}, timestamp={}", currentIndex - 1,
+    CELUX_TRACE("next() returning frame index={}, timestamp={}", currentIndex - 1,
                 current_timestamp);
     return tensorToOutput(frame);
 }
-
 
 void VideoReader::enter()
 {
@@ -844,7 +845,8 @@ torch::ScalarType VideoReader::findTypeFromBitDepth()
 {
     if (force_8bit)
     {
-        CELUX_DEBUG("Forcing tensor data type to torch::kUInt8 (force_8bit={})", force_8bit);
+        CELUX_DEBUG("Forcing tensor data type to torch::kUInt8 (force_8bit={})",
+                    force_8bit);
         return torch::kUInt8;
     }
     int bit_depth = decoder->getBitDepth();
@@ -862,8 +864,8 @@ torch::ScalarType VideoReader::findTypeFromBitDepth()
         break;
     case 12:
         CELUX_DEBUG("Setting tensor data type to torch::kUInt16");
-		torchDataType = torch::kUInt16;
-		break;
+        torchDataType = torch::kUInt16;
+        break;
     case 16:
         CELUX_DEBUG("Setting tensor data type to torch::kUInt16");
         torchDataType = torch::kUInt16;
@@ -878,7 +880,6 @@ torch::ScalarType VideoReader::findTypeFromBitDepth()
     }
     return torchDataType;
 }
-
 
 std::shared_ptr<celux::VideoEncoder>
 VideoReader::createEncoder(const std::string& outputPath) const
@@ -924,13 +925,13 @@ int64_t VideoReader::getFrameCount() const
 torch::Tensor VideoReader::decodeBatch(const std::vector<int64_t>& indices)
 {
     CELUX_DEBUG("VideoReader::decodeBatch called with {} indices", indices.size());
-    
+
     // Use the main decoder for batch operations
     torch::Tensor batch;
     {
         py::gil_scoped_release release;
         batch = decoder->decode_batch(indices);
     }
-    
+
     return batch;
 }

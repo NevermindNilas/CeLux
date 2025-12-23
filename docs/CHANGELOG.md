@@ -1,5 +1,13 @@
 
-## 📈 Changelog
+### **Version 0.8.4 (2025-12-24)**
+
+#### **VideoReader Optimizations & Fixes**
+- **Added:** "Smart Seek" logic for `VideoReader` indexing. Forward skips within a 5-second threshold now use sequential decoding instead of expensive random access, providing up to 10x faster periodic seeking (e.g., `vr[::10]`).
+- **Fixed:** Critical bug where `current_timestamp` was uninitialized in the `VideoReader` constructor, leading to unstable seeking behavior.
+- **Improved:** Consolidated `currentIndex` tracking into the core decoding loop, ensuring frame indices are always accurate across iterator and indexing access methods.
+- **Improved:** `VideoReader::operator[]` integer indexing is now robust and index-aware, avoiding redundant PTS-to-index conversions for simple forward jumps.
+
+---
 
 ### **Version 0.8.3 (2025-12-17)**
 

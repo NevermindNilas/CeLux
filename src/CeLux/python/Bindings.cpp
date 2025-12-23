@@ -1,8 +1,9 @@
 ﻿#include "VideoEncoder.hpp"
 #include "VideoReader.hpp"
-#include <torch/extension.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <torch/extension.h>
+
 
 namespace py = pybind11;
 #define PYBIND11_DETAILED_ERROR_MESSAGES
@@ -20,16 +21,16 @@ Backend backendFromString(const std::string& backend_str)
     }
     else
     {
-        throw std::invalid_argument(
-            "Invalid backend: '" + backend_str + "'. Must be 'pytorch' or 'numpy'.");
+        throw std::invalid_argument("Invalid backend: '" + backend_str +
+                                    "'. Must be 'pytorch' or 'numpy'.");
     }
 }
 
 PYBIND11_MODULE(_celux, m)
 {
     m.doc() = "celux – lightspeed video decoding into tensors";
-    m.attr("__version__") = "0.8.2"; 
-    
+    m.attr("__version__") = "0.8.2";
+
     // Expose CUDA build status
 #ifdef CELUX_ENABLE_CUDA
     m.attr("__cuda_support__") = true;
@@ -37,14 +38,10 @@ PYBIND11_MODULE(_celux, m)
     m.attr("__cuda_support__") = false;
 #endif
 
-    m.attr("__all__") = py::make_tuple(
-        "__version__",
-        "__cuda_support__",
-        "VideoReader",
-        "VideoEncoder",
-        "Audio", "set_log_level", "LogLevel"
-    );
-        py::enum_<spdlog::level::level_enum>(m, "LogLevel")
+    m.attr("__all__") =
+        py::make_tuple("__version__", "__cuda_support__", "VideoReader", "VideoEncoder",
+                       "Audio", "set_log_level", "LogLevel");
+    py::enum_<spdlog::level::level_enum>(m, "LogLevel")
         .value("trace", spdlog::level::trace)
         .value("debug", spdlog::level::debug)
         .value("info", spdlog::level::info)
@@ -58,20 +55,21 @@ PYBIND11_MODULE(_celux, m)
           py::arg("level"));
     // ---------- VideoReader -----------
     py::class_<VideoReader, std::shared_ptr<VideoReader>>(m, "VideoReader")
-        .def(py::init([](const std::string& input_path, int num_threads, bool force_8bit, 
-                        const std::string& backend, const std::string& decode_accelerator,
-                        int cuda_device_index) {
-            return std::make_shared<VideoReader>(input_path, num_threads, force_8bit, 
-                                                 backendFromString(backend),
-                                                 decode_accelerator, cuda_device_index);
-        }),
+        .def(py::init(
+                 [](const std::string& input_path, int num_threads, bool force_8bit,
+                    const std::string& backend, const std::string& decode_accelerator,
+                    int cuda_device_index)
+                 {
+                     return std::make_shared<VideoReader>(
+                         input_path, num_threads, force_8bit,
+                         backendFromString(backend), decode_accelerator,
+                         cuda_device_index);
+                 }),
              py::arg("input_path"),
              py::arg("num_threads") =
                  static_cast<int>(std::thread::hardware_concurrency() / 2),
-             py::arg("force_8bit") = false,
-             py::arg("backend") = "pytorch",
-             py::arg("decode_accelerator") = "cpu",
-             py::arg("cuda_device_index") = 0,
+             py::arg("force_8bit") = false, py::arg("backend") = "pytorch",
+             py::arg("decode_accelerator") = "cpu", py::arg("cuda_device_index") = 0,
              R"doc(Open a video file for reading.
 
 Args:
@@ -87,7 +85,8 @@ Args:
     cuda_device_index (int, optional): CUDA device index for NVDEC. Defaults to 0.
 )doc")
         .def("read_frame", &VideoReader::readFrame,
-             "Decode and return the next frame as a H×W×3 array (tensor or ndarray based on backend).")
+             "Decode and return the next frame as a H×W×3 array (tensor or ndarray "
+             "based on backend).")
         .def_property_readonly("properties", &VideoReader::getProperties)
         .def_property_readonly("width", &VideoReader::getWidth)
         .def_property_readonly("height", &VideoReader::getHeight)
@@ -125,8 +124,9 @@ Uses the secondary decoder; does not disturb iteration.)doc")
 Uses the secondary decoder; does not disturb iteration.)doc")
         .def("get_frame_count", &VideoReader::getFrameCount,
              "Get total frame count from metadata (no pre-scanning)")
-        .def("decode_batch", &VideoReader::decodeBatch, py::arg("indices"),
-             "Decode a batch of frames at specified indices, returning [B,H,W,C] tensor")
+        .def(
+            "decode_batch", &VideoReader::decodeBatch, py::arg("indices"),
+            "Decode a batch of frames at specified indices, returning [B,H,W,C] tensor")
 
         .def(
             "__enter__",
@@ -213,7 +213,8 @@ Uses the secondary decoder; does not disturb iteration.)doc")
                                { return a.getProperties().audioCodec; });
 
     // ---------- celux::VideoEncoder -----------
-    py::class_<celux::VideoEncoder, std::shared_ptr<celux::VideoEncoder>>(m, "VideoEncoder")
+    py::class_<celux::VideoEncoder, std::shared_ptr<celux::VideoEncoder>>(
+        m, "VideoEncoder")
         .def(py::init<const std::string&,         // output_path
                       std::optional<std::string>, // codec
                       std::optional<int>,         // width
@@ -235,13 +236,13 @@ Uses the secondary decoder; does not disturb iteration.)doc")
              "Create a celux::VideoEncoder; pass None for defaults.")
         .def("encode_frame", &celux::VideoEncoder::encodeFrame, py::arg("frame"),
              "Encode one video frame (H×W×3 torch.uint8 tensor).")
-        .def("encode_audio_frame", &celux::VideoEncoder::encodeAudioFrame, py::arg("audio"),
-             "Encode one audio buffer (1-D torch.int16 PCM tensor).")
+        .def("encode_audio_frame", &celux::VideoEncoder::encodeAudioFrame,
+             py::arg("audio"), "Encode one audio buffer (1-D torch.int16 PCM tensor).")
         .def("close", &celux::VideoEncoder::close,
              "Finalize file and flush audio/video streams.")
         .def(
-            "__enter__", [](celux::VideoEncoder& e) -> celux::VideoEncoder& { return e; },
-            py::return_value_policy::reference_internal)
+            "__enter__", [](celux::VideoEncoder& e) -> celux::VideoEncoder&
+            { return e; }, py::return_value_policy::reference_internal)
         .def("__exit__",
              [](celux::VideoEncoder& e, py::object, py::object, py::object)
              {

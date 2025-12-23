@@ -463,6 +463,7 @@ if(UNIX AND CELUX_BUILD_PYTHON)
     "${VCPKG_LIB}/libyuv.so*"
     "${VCPKG_LIB}/libfmt.so*"
     "${VCPKG_LIB}/libturbojpeg.so*"
+    "${VCPKG_LIB}/libdav1d.so*"
   )
 
   foreach(sofile ${CELUX_SOS})

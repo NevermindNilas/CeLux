@@ -139,64 +139,69 @@ jobs:
         name: windows-wheel
         path: 'dist/*.whl'
 
-  #build-linux:
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - name: Checkout code
-  #      uses: actions/checkout@v4
-#
-  #    - name: Install cibuildwheel
-  #      run: python -m pip install cibuildwheel==2.20.0
-#
-  #    # Cache vcpkg directory on the host
-  #    - name: Cache vcpkg
-  #      uses: actions/cache@v4
-  #      with:
-  #        path: /tmp/vcpkg_cache
-  #        key: vcpkg-linux-${{ hashFiles('pyproject.toml') }}
-  #        restore-keys: |
-  #          vcpkg-linux-
-#
-  #    - name: Build Linux wheel
-  #      env:
-  #        CIBW_BUILD: "cp313-manylinux*_x86_64"
-  #        CIBW_ARCHS_LINUX: "x86_64"
-  #        CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
-  #        CIBW_CONTAINER_OPTIONS: "-v /tmp/vcpkg_cache:/opt/vcpkg"
-  #        CIBW_ENVIRONMENT_LINUX: >-
-  #          SKBUILD_CONFIG=Release
-  #          SKBUILD_GENERATOR=Ninja
-  #          VCPKG_TARGET_TRIPLET=x64-linux-dynamic
-  #          VCPKG_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-  #          VCPKG_FORCE_SYSTEM_BINARIES=1
-  #          CC=gcc
-  #          CXX=g++
-  #          CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-  #                      -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
-  #                      -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
-  #                      -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
-  #        CIBW_BEFORE_ALL_LINUX: |
-  #          (command -v dnf >/dev/null 2>&1 && dnf -y install \
-  #             git pkgconf nasm zip unzip curl tar \
-  #             gcc gcc-c++ make ninja-build cmake || \
-  #           command -v yum >/dev/null 2>&1 && yum -y install \
-  #             git pkgconf nasm zip unzip curl tar \
-  #             gcc gcc-c++ make ninja-build cmake)
-  #          # Only clone if not already present (from cache)
-  #          if [ ! -d "/opt/vcpkg/.git" ]; then
-  #              git clone https://github.com/microsoft/vcpkg /opt/vcpkg
-  #          fi
-  #          /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-  #          /opt/vcpkg/vcpkg install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
-  #        CIBW_BEFORE_BUILD_LINUX: |
-  #          python -m pip install -U pip wheel setuptools
-  #          python -m pip install --only-binary=:all: "pybind11>=2.11"
-  #          python -m pip install --only-binary=:all: torch || python -m pip install --only-binary=:all: --index-url https://download.pytorch.org/whl/cpu torch
-  #        CIBW_OUTPUT_DIR: dist
-  #      run: python -m cibuildwheel --platform linux
-#
-  #    - name: Upload Linux wheel
-  #      uses: actions/upload-artifact@v4
-  #      with:
-  #        name: linux-wheel
-  #        path: 'dist/*.whl'
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==2.20.0
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: /tmp/vcpkg_cache
+          key: vcpkg-linux-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            vcpkg-linux-
+
+      - name: Build Linux wheel
+        env:
+          CIBW_BUILD: "cp313-manylinux*_x86_64"
+          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_CONTAINER_OPTIONS: "-v /tmp/vcpkg_cache:/opt/vcpkg"
+          CIBW_ENVIRONMENT_LINUX: >-
+            SKBUILD_CONFIG=Release
+            SKBUILD_GENERATOR=Ninja
+            VCPKG_TARGET_TRIPLET=x64-linux-dynamic
+            VCPKG_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+            VCPKG_FORCE_SYSTEM_BINARIES=1
+            CC=gcc
+            CXX=g++
+            CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+                        -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
+                        -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
+                        -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
+          CIBW_BEFORE_ALL_LINUX: |
+            (command -v dnf >/dev/null 2>&1 && dnf -y install \
+               git pkgconf nasm zip unzip curl tar \
+               gcc gcc-c++ make ninja-build cmake || \
+             command -v yum >/dev/null 2>&1 && yum -y install \
+               git pkgconf nasm zip unzip curl tar \
+               gcc gcc-c++ make ninja-build cmake)
+            # Only clone if not already present (from cache)
+            if [ ! -d "/opt/vcpkg/.git" ]; then
+                git clone https://github.com/microsoft/vcpkg /opt/vcpkg
+            fi
+            /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+            /opt/vcpkg/vcpkg install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
+          CIBW_BEFORE_BUILD_LINUX: |
+            python -m pip install -U pip wheel setuptools
+            python -m pip install --only-binary=:all: "pybind11>=2.11"
+            python -m pip install --only-binary=:all: torch || python -m pip install --only-binary=:all: --index-url https://download.pytorch.org/whl/cpu torch
+          CIBW_OUTPUT_DIR: dist
+        run: python -m cibuildwheel --platform linux
+
+      - name: Verify dav1d in wheel
+        run: |
+          echo "=== Checking for dav1d in wheel ==="
+          unzip -l dist/*.whl | grep -i dav1d || (echo "ERROR: dav1d not bundled in wheel!" && exit 1)
+          echo "=== dav1d verification passed ==="
+
+      - name: Upload Linux wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-wheel
+          path: 'dist/*.whl'

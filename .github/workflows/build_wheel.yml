@@ -71,7 +71,7 @@ jobs:
       shell: cmd
       run: |
         "${{ runner.temp }}\vcpkg\vcpkg" remove ffmpeg --triplet x64-windows-release 2>nul || echo "FFmpeg not installed, skipping removal"
-        "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265,nvcodec] --triplet x64-windows-release --recurse
+        "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-windows-release --recurse
 
     - name: Verify dav1d is installed
       shell: cmd
@@ -80,20 +80,21 @@ jobs:
         dir "${{ runner.temp }}\vcpkg\installed\x64-windows-release\bin\dav1d.dll" 2>nul || (echo "ERROR: dav1d.dll not found!" && exit /b 1)
         echo "=== dav1d verification passed ==="
 
-    - name: Setup CUDA toolkit
-      uses: Jimver/cuda-toolkit@v0.2.29
-      id: cuda-toolkit
-      with:
-        cuda: '12.6.3'
-        method: 'network'
-        sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+    # CUDA disabled for CI builds
+    # - name: Setup CUDA toolkit
+    #   uses: Jimver/cuda-toolkit@v0.2.29
+    #   id: cuda-toolkit
+    #   with:
+    #     cuda: '12.6.3'
+    #     method: 'network'
+    #     sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 
-    - name: Verify CUDA installation
-      shell: bash
-      run: |
-        echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
-        ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
-        "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
+    # - name: Verify CUDA installation
+    #   shell: bash
+    #   run: |
+    #     echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
+    #     ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
+    #     "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
 
     - name: Build Windows wheel
       shell: bash
@@ -103,15 +104,8 @@ jobs:
         VCPKG_ROOT: ${{ runner.temp }}/vcpkg
         VCPKG_TOOLCHAIN_FILE: ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
         VCPKG_TARGET_TRIPLET: x64-windows-release
-        CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
-        CUDACXX: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe
+        CMAKE_ARGS: "-DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-release -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg"
       run: |
-        # Convert CUDA path to CMake-compatible format
-        CUDA_PATH_CMAKE=$(echo "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" | sed 's|\\|/|g')
-
-        # Set CMAKE_ARGS with proper escaping
-        export CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-release -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg -DCELUX_ENABLE_CUDA=ON -DCMAKE_CUDA_COMPILER=${CUDA_PATH_CMAKE}/bin/nvcc.exe"
-
         echo "CMAKE_ARGS: $CMAKE_ARGS"
         python -m pip wheel . --no-deps -w dist -v
 
@@ -125,13 +119,13 @@ jobs:
     - name: List final wheel contents
       run: unzip -l dist/*.whl | grep celux/
 
-    - name: Verify CUDA support in wheel
+    - name: Test wheel import
       shell: bash
       run: |
-        echo "=== Installing wheel and checking CUDA support ==="
+        echo "=== Installing wheel and testing import ==="
         pip install dist/*.whl --force-reinstall
-        python -c "import celux; print(f'CUDA support: {celux.__cuda_support__}'); assert celux.__cuda_support__ == True, 'CUDA support not enabled in wheel!'"
-        echo "=== CUDA verification passed ==="
+        python -c "import torch, celux; print(f'torch: {torch.__version__}, celux: {celux.__version__}, CUDA support: {celux.__cuda_support__}')"
+        echo "=== Import test passed ==="
 
     - name: Upload Windows wheel
       uses: actions/upload-artifact@v4
@@ -199,6 +193,14 @@ jobs:
           echo "=== Checking for dav1d in wheel ==="
           unzip -l dist/*.whl | grep -i dav1d || (echo "ERROR: dav1d not bundled in wheel!" && exit 1)
           echo "=== dav1d verification passed ==="
+
+      - name: Test wheel import
+        run: |
+          echo "=== Installing wheel and testing import ==="
+          python -m pip install dist/*.whl --force-reinstall
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -c "import torch, celux; print(f'torch: {torch.__version__}, celux: {celux.__version__}')"
+          echo "=== Import test passed ==="
 
       - name: Upload Linux wheel
         uses: actions/upload-artifact@v4

@@ -1,15 +1,10 @@
 
-### **Version 0.8.4 (2025-12-24)**
-
+### **Version 0.8.3 (YYYY-MM-DD)**
 #### **VideoReader Optimizations & Fixes**
 - **Added:** "Smart Seek" logic for `VideoReader` indexing. Forward skips within a 5-second threshold now use sequential decoding instead of expensive random access, providing up to 10x faster periodic seeking (e.g., `vr[::10]`).
 - **Fixed:** Critical bug where `current_timestamp` was uninitialized in the `VideoReader` constructor, leading to unstable seeking behavior.
 - **Improved:** Consolidated `currentIndex` tracking into the core decoding loop, ensuring frame indices are always accurate across iterator and indexing access methods.
 - **Improved:** `VideoReader::operator[]` integer indexing is now robust and index-aware, avoiding redundant PTS-to-index conversions for simple forward jumps.
-
----
-
-### **Version 0.8.3 (2025-12-17)**
 
 #### **Color Conversion Robustness**
 - **Fixed:** Color space configuration errors in `AutoToRGBConverter` now throw exceptions instead of silently continuing with incorrect color matrices. This prevents subtle color shifts that were hard to debug.

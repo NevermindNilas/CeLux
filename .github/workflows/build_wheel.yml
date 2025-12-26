@@ -169,6 +169,7 @@ jobs:
                         -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
                         -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
                         -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/vcpkg/installed/x64-linux-dynamic/lib; auditwheel repair -w {dest_dir} {wheel}"
           CIBW_BEFORE_ALL_LINUX: |
             (command -v dnf >/dev/null 2>&1 && dnf -y install \
                git pkgconf nasm zip unzip curl tar \

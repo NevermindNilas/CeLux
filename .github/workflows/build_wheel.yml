@@ -132,22 +132,68 @@ jobs:
           unzip -l dist/*.whl | grep celux/
 
       - name: Test wheel import
-        shell: bash
+        shell: powershell
         run: |
-          echo "=== Installing wheel and testing import ==="
-          pip install dist/*.whl --force-reinstall
+          Write-Host "=== Installing wheel and testing import ==="
+          pip install (Get-ChildItem dist/*.whl) --force-reinstall
 
-          # Add FFmpeg bin to PATH for the test
-          export PATH=$PATH:$(pwd)/external/ffmpeg/bin
+          # Add FFmpeg bin to PATH for the test (Native Windows Path)
+          $FFmpegBin = Join-Path $pwd "external\ffmpeg\bin"
+          Write-Host "Adding to PATH: $FFmpegBin"
+          $env:PATH = "$FFmpegBin;$env:PATH"
 
-          python -c "import torch, celux; print(f'torch: {torch.__version__}, celux: {celux.__version__}, CUDA support: {celux.__cuda_support__}')"
-          echo "=== Import test passed ==="
+          # Python script to debug DLL loading
+          $Script = @'
+          import os
+          import sys
+          import ctypes
+          import torch
+
+          print(f"Python: {sys.version}")
+          print(f"CWD: {os.getcwd()}")
+
+          # Expected FFmpeg 7.1/8.0 DLLs
+          expected_dlls = [
+              "avcodec-62.dll", "avdevice-62.dll", "avfilter-11.dll", 
+              "avformat-62.dll", "avutil-60.dll", "swresample-6.dll", "swscale-9.dll"
+          ]
+
+          print("--- Checking FFmpeg DLL availability ---")
+          missing = []
+          for dll in expected_dlls:
+              try:
+                  ctypes.CDLL(dll)
+                  print(f"  [OK] Found {dll}")
+              except FileNotFoundError:
+                  print(f"  [MISSING] Could not find {dll}")
+                  missing.append(dll)
+              except OSError as e:
+                  print(f"  [ERROR] Found but failed to load {dll}: {e}")
+
+          if missing:
+              print(f"CRITICAL: {len(missing)} FFmpeg DLLs are missing from PATH.")
+              print(f"Current PATH: {os.environ['PATH']}")
+          else:
+              print("All expected FFmpeg DLLs are loadable.")
+              
+          print("--- Importing CeLux ---")
+          try:
+              import celux
+              print(f"SUCCESS! celux: {celux.__version__}, torch: {torch.__version__}, CUDA: {celux.__cuda_support__}")
+          except ImportError as e:
+              print(f"FATAL: Import failed: {e}")
+              # On Python 3.8+ Windows, explicit DLL path addition might be needed if PATH doesn't work
+              # But pure PATH should work for ctypes/system load.
+              sys.exit(1)
+          '@
+
+          python -c $Script
+          write-host "=== Import test passed ==="
 
       - name: Upload Windows wheel
         uses: actions/upload-artifact@v4
         with:
           name: windows-wheel
-          path: "dist/*.whl"
 #  build-linux:
 #    runs-on: ubuntu-latest
 #    steps:

@@ -119,11 +119,18 @@ jobs:
           CMAKE_GENERATOR: Ninja
           SKBUILD_CONFIG: Release
           CELUX_ENABLE_CUDA: "ON"
-          VCPKG_ROOT: ${{ runner.temp }}/vcpkg
-          VCPKG_TOOLCHAIN_FILE: ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-          VCPKG_TARGET_TRIPLET: x64-windows-release
-          CMAKE_ARGS: "-DCMAKE_TOOLCHAIN_FILE=${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-release -DCMAKE_PREFIX_PATH=${{ runner.temp }}/vcpkg/installed/x64-windows-release"
         run: |
+          # Convert backslashes to forward slashes to avoid CMake escaping issues on Windows
+          TEMP_FWD=$(echo "$RUNNER_TEMP" | tr '\\' '/')
+
+          export VCPKG_ROOT="${TEMP_FWD}/vcpkg"
+          export VCPKG_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          export VCPKG_TARGET_TRIPLET=x64-windows-release
+          export CMAKE_PREFIX_PATH="${VCPKG_ROOT}/installed/x64-windows-release"
+
+          # Construct CMAKE_ARGS with sanitized paths
+          export CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=${VCPKG_TOOLCHAIN_FILE} -DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET} -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
+
           echo "CMAKE_ARGS: $CMAKE_ARGS"
           python -m pip wheel . --no-deps -w dist -v
 

@@ -113,6 +113,14 @@ jobs:
           ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
           "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
 
+          echo "Checking for crt/host_config.h..."
+          if [ -f "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/include/crt/host_config.h" ]; then
+            echo "SUCCESS: host_config.h found."
+          else
+            echo "ERROR: host_config.h NOT found!"
+            find "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" -name "host_config.h"
+          fi
+
       - name: Build Windows wheel
         shell: bash
         env:
@@ -123,15 +131,20 @@ jobs:
           # Convert backslashes to forward slashes to avoid CMake escaping issues on Windows
           TEMP_FWD=$(echo "$RUNNER_TEMP" | tr '\\' '/')
 
+          # Sanitize CUDA_PATH path as well
+          CUDA_PATH_FWD=$(echo "$CUDA_PATH" | tr '\\' '/')
+          export CUDA_PATH="$CUDA_PATH_FWD"
+
           export VCPKG_ROOT="${TEMP_FWD}/vcpkg"
           export VCPKG_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
           export VCPKG_TARGET_TRIPLET=x64-windows-release
           export CMAKE_PREFIX_PATH="${VCPKG_ROOT}/installed/x64-windows-release"
 
-          # Construct CMAKE_ARGS with sanitized paths
-          export CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=${VCPKG_TOOLCHAIN_FILE} -DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET} -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
+          # Construct CMAKE_ARGS with sanitized paths AND FORCE CELUX_ENABLE_CUDA=ON
+          export CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=${VCPKG_TOOLCHAIN_FILE} -DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET} -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH} -DCELUX_ENABLE_CUDA=ON"
 
           echo "CMAKE_ARGS: $CMAKE_ARGS"
+          # Use --no-build-isolation so we usage the pre-installed CUDA-enabled Torch
           python -m pip wheel . --no-deps --no-build-isolation -w dist -v
 
       - name: List wheel contents

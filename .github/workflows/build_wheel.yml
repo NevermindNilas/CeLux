@@ -21,6 +21,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip" # Cache pip packages
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -97,27 +98,27 @@ jobs:
 
           Write-Host "=== FFmpeg installed (headers/libs for build, bin for testing) ==="
 
-      # CUDA disabled for CI builds
-      # - name: Setup CUDA toolkit
-      #   uses: Jimver/cuda-toolkit@v0.2.29
-      #   id: cuda-toolkit
-      #   with:
-      #     cuda: '12.6.3'
-      #     method: 'network'
-      #     sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+      - name: Setup CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.29
+        id: cuda-toolkit
+        with:
+          cuda: "13.1.1"
+          method: "network"
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 
-      # - name: Verify CUDA installation
-      #   shell: bash
-      #   run: |
-      #     echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
-      #     ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
-      #     "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
+      - name: Verify CUDA installation
+        shell: bash
+        run: |
+          echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
+          ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
+          "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
 
       - name: Build Windows wheel
         shell: bash
         env:
           CMAKE_GENERATOR: Ninja
           SKBUILD_CONFIG: Release
+          CELUX_ENABLE_CUDA: "ON"
           VCPKG_ROOT: ${{ runner.temp }}/vcpkg
           VCPKG_TOOLCHAIN_FILE: ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
           VCPKG_TARGET_TRIPLET: x64-windows-release
@@ -179,6 +180,11 @@ jobs:
           try:
               import celux
               print(f"SUCCESS! celux: {celux.__version__}")
+              
+              if hasattr(celux, "__cuda_support__"):
+                  print(f"CUDA Support: {celux.__cuda_support__}")
+              else:
+                  print("CUDA Support: [UNKNOWN] (__cuda_support__ not found)")
           except ImportError as e:
               print(f"FATAL: Import failed: {e}")
               print("--- Diagnostic: Trying to load DLLs manually ---")

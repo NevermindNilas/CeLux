@@ -29,8 +29,8 @@ jobs:
       - name: Upgrade pip & install deps
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install pybind11 numpy ninja
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
+          python -m pip install scikit-build-core pybind11 numpy ninja
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
       - name: Cache vcpkg
         uses: actions/cache@v4
@@ -132,7 +132,7 @@ jobs:
           export CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=${VCPKG_TOOLCHAIN_FILE} -DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET} -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
 
           echo "CMAKE_ARGS: $CMAKE_ARGS"
-          python -m pip wheel . --no-deps -w dist -v
+          python -m pip wheel . --no-deps --no-build-isolation -w dist -v
 
       - name: List wheel contents
         run: |

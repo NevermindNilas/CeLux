@@ -104,7 +104,7 @@ jobs:
         with:
           cuda: "13.1.0"
           method: "network"
-          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+          # sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 
       - name: Verify CUDA installation
         shell: bash
@@ -122,7 +122,7 @@ jobs:
           VCPKG_ROOT: ${{ runner.temp }}/vcpkg
           VCPKG_TOOLCHAIN_FILE: ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
           VCPKG_TARGET_TRIPLET: x64-windows-release
-          CMAKE_ARGS: "-DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-release -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release"
+          CMAKE_ARGS: "-DCMAKE_TOOLCHAIN_FILE=${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-release -DCMAKE_PREFIX_PATH=${{ runner.temp }}/vcpkg/installed/x64-windows-release"
         run: |
           echo "CMAKE_ARGS: $CMAKE_ARGS"
           python -m pip wheel . --no-deps -w dist -v

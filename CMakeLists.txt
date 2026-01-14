@@ -1,4 +1,25 @@
 cmake_minimum_required(VERSION 3.23)
+
+# ─── Auto-detect vcpkg from local directory ───
+# If CMAKE_TOOLCHAIN_FILE is not set, try to find vcpkg in the source directory
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED ENV{CMAKE_TOOLCHAIN_FILE})
+  set(_local_vcpkg_toolchain "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
+  if(EXISTS "${_local_vcpkg_toolchain}")
+    set(CMAKE_TOOLCHAIN_FILE "${_local_vcpkg_toolchain}" CACHE FILEPATH "vcpkg toolchain file")
+    message(STATUS "Auto-detected local vcpkg: ${CMAKE_TOOLCHAIN_FILE}")
+    
+    # Also set default triplet if not set
+    if(NOT DEFINED VCPKG_TARGET_TRIPLET AND NOT DEFINED ENV{VCPKG_TARGET_TRIPLET})
+      if(WIN32)
+        set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING "vcpkg target triplet")
+      else()
+        set(VCPKG_TARGET_TRIPLET "x64-linux-dynamic" CACHE STRING "vcpkg target triplet")
+      endif()
+      message(STATUS "Using default triplet: ${VCPKG_TARGET_TRIPLET}")
+    endif()
+  endif()
+endif()
+
 project(CeLux VERSION 1.0 LANGUAGES CXX)
 
 # ─── Compiler options ─── 
@@ -122,20 +143,56 @@ else()
   message(FATAL_ERROR "fmt header-only target not found. Install a package that exports fmt::fmt-header-only.")
 endif()
 
-if(DEFINED ENV{VCPKG_ROOT} AND DEFINED VCPKG_TARGET_TRIPLET)
-  set(_vcpkg_ffmpeg_mod
-      "$ENV{VCPKG_ROOT}/installed/${VCPKG_TARGET_TRIPLET}/share/ffmpeg")
-  file(TO_CMAKE_PATH "${_vcpkg_ffmpeg_mod}" _vcpkg_ffmpeg_mod)
-  message(STATUS "Appending vcpkg FFmpeg module path: ${_vcpkg_ffmpeg_mod}")
-  list(APPEND CMAKE_MODULE_PATH "${_vcpkg_ffmpeg_mod}")
+# --- FFmpeg ---
+# Uses pre-built FFmpeg from external/ffmpeg directory
+# Run: .\tools\download_ffmpeg.ps1 to download FFmpeg before building
+set(CELUX_FFMPEG_DIR "${CMAKE_SOURCE_DIR}/external/ffmpeg")
+
+if(NOT EXISTS "${CELUX_FFMPEG_DIR}/include/libavcodec/avcodec.h")
+  message(FATAL_ERROR 
+    "FFmpeg not found at ${CELUX_FFMPEG_DIR}\n"
+    "Run: .\\tools\\download_ffmpeg.ps1 to download pre-built FFmpeg")
 endif()
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-find_package(FFMPEG REQUIRED COMPONENTS avcodec avformat avutil avfilter
-                                  swscale swresample avdevice)
+message(STATUS "Using external FFmpeg from: ${CELUX_FFMPEG_DIR}")
 
-set(CELUX_FFMPEG_LIBS ${FFMPEG_LIBRARIES})
-set(CELUX_FFMPEG_INCS ${FFMPEG_INCLUDE_DIRS})
+# Set include directories
+set(CELUX_FFMPEG_INCS "${CELUX_FFMPEG_DIR}/include")
+
+# Find import libraries
+if(WIN32)
+  set(_ffmpeg_lib_dir "${CELUX_FFMPEG_DIR}/lib")
+  set(CELUX_FFMPEG_LIBS
+    "${_ffmpeg_lib_dir}/avcodec.lib"
+    "${_ffmpeg_lib_dir}/avformat.lib"
+    "${_ffmpeg_lib_dir}/avutil.lib"
+    "${_ffmpeg_lib_dir}/avfilter.lib"
+    "${_ffmpeg_lib_dir}/swscale.lib"
+    "${_ffmpeg_lib_dir}/swresample.lib"
+    "${_ffmpeg_lib_dir}/avdevice.lib"
+  )
+else()
+  set(_ffmpeg_lib_dir "${CELUX_FFMPEG_DIR}/lib")
+  set(CELUX_FFMPEG_LIBS
+    "${_ffmpeg_lib_dir}/libavcodec.so"
+    "${_ffmpeg_lib_dir}/libavformat.so"
+    "${_ffmpeg_lib_dir}/libavutil.so"
+    "${_ffmpeg_lib_dir}/libavfilter.so"
+    "${_ffmpeg_lib_dir}/libswscale.so"
+    "${_ffmpeg_lib_dir}/libswresample.so"
+    "${_ffmpeg_lib_dir}/libavdevice.so"
+  )
+endif()
+
+# Verify libraries exist
+foreach(_lib ${CELUX_FFMPEG_LIBS})
+  if(NOT EXISTS "${_lib}")
+    message(FATAL_ERROR "FFmpeg library not found: ${_lib}")
+  endif()
+endforeach()
+
+message(STATUS "FFmpeg includes: ${CELUX_FFMPEG_INCS}")
+message(STATUS "FFmpeg libraries: ${CELUX_FFMPEG_LIBS}")
 
 if(CELUX_BUILD_PYTHON)
   find_package(Python3 3.13 REQUIRED COMPONENTS Interpreter Development.Module)
@@ -173,26 +230,32 @@ if(CELUX_BUILD_PYTHON)
     endif()
   endif()
 
-  # -- PyTorch paths (platform-specific) --
-  if(WIN32)
-    set(CELUX_PYTORCH_LIBDIR "${Python3_SITE_PACKAGES}/Lib/site-packages/torch/lib")
-    set(CELUX_PYTORCH_INCLUDEDIR "${Python3_SITE_PACKAGES}/Lib/site-packages/torch/include")
-  else()
-    set(CELUX_PYTORCH_LIBDIR "${Python3_SITE_PACKAGES}/torch/lib")
-    set(CELUX_PYTORCH_INCLUDEDIR "${Python3_SITE_PACKAGES}/torch/include")
-  endif()
-
-  # Main headers: torch/include and torch/include/torch/csrc/api/include
-  include_directories(
-    ${CELUX_PYTORCH_INCLUDEDIR}
-    ${CELUX_PYTORCH_INCLUDEDIR}/torch/csrc/api/include
-    ${CELUX_PYTORCH_INCLUDEDIR}
+  # -- PyTorch paths (detected dynamically via Python import) --
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE}
+            -c "import torch; print(torch.__path__[0])"
+    OUTPUT_VARIABLE TORCH_PACKAGE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _torch_result
   )
-  # Add the lib directory to the linker
-  link_directories(${CELUX_PYTORCH_LIBDIR})
-
-  message(STATUS "Using Python site-packages torch headers: ${CELUX_PYTORCH_INCLUDEDIR}")
-  message(STATUS "Using Python site-packages torch libs:    ${CELUX_PYTORCH_LIBDIR}")
+  
+  if(_torch_result EQUAL 0 AND EXISTS "${TORCH_PACKAGE_DIR}")
+    set(CELUX_PYTORCH_LIBDIR "${TORCH_PACKAGE_DIR}/lib")
+    set(CELUX_PYTORCH_INCLUDEDIR "${TORCH_PACKAGE_DIR}/include")
+    
+    # Main headers: torch/include and torch/include/torch/csrc/api/include
+    include_directories(
+      ${CELUX_PYTORCH_INCLUDEDIR}
+      ${CELUX_PYTORCH_INCLUDEDIR}/torch/csrc/api/include
+    )
+    # Add the lib directory to the linker
+    link_directories(${CELUX_PYTORCH_LIBDIR})
+    
+    message(STATUS "Using torch headers: ${CELUX_PYTORCH_INCLUDEDIR}")
+    message(STATUS "Using torch libs:    ${CELUX_PYTORCH_LIBDIR}")
+  else()
+    message(FATAL_ERROR "PyTorch not found. Run: pip install torch")
+  endif()
 endif()
 
 file(GLOB_RECURSE CELUX_SOURCES
@@ -372,7 +435,10 @@ endif()
 
 if(WIN32 AND CELUX_BUILD_PYTHON)
   # DLL copy logic for Windows only
-  # Use VCPKG_TARGET_TRIPLET env var if set (e.g., x64-windows-release), otherwise default to x64-windows
+  # NOTE: FFmpeg DLLs are NOT bundled - user must have FFmpeg in their PATH
+  set(CELUX_DLL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/celux")
+  
+  # vcpkg provides spdlog, fmt, libyuv
   if(DEFINED ENV{VCPKG_TARGET_TRIPLET})
     set(_vcpkg_triplet "$ENV{VCPKG_TARGET_TRIPLET}")
   else()
@@ -386,21 +452,10 @@ if(WIN32 AND CELUX_BUILD_PYTHON)
     set(VCPKG_BIN "${CMAKE_SOURCE_DIR}/vcpkg/installed/${_vcpkg_triplet}/bin")
   endif()
   
-  message(STATUS "VCPKG_BIN path for DLLs: ${VCPKG_BIN}")
-  message(STATUS "Using triplet: ${_vcpkg_triplet}")
-  
-  set(CELUX_DLL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/celux")
   file(GLOB CELUX_DLLS
-    "${VCPKG_BIN}/av*.dll"
-    "${VCPKG_BIN}/sw*.dll"
-    "${VCPKG_BIN}/ffmpeg*.dll"
-    "${VCPKG_BIN}/libx264*.dll"
-    "${VCPKG_BIN}/libx265*.dll"
     "${VCPKG_BIN}/libyuv*.dll"
     "${VCPKG_BIN}/spdlog*.dll"
     "${VCPKG_BIN}/fmt*.dll"
-    "${VCPKG_BIN}/*jpeg*.dll"
-    "${VCPKG_BIN}/dav1d.dll"
   )
 
   if(CELUX_ENABLE_CUDA)
@@ -435,11 +490,12 @@ if(WIN32 AND CELUX_BUILD_PYTHON)
     # <-- install those same DLLs into the celux package!
   install(FILES ${CELUX_DLLS}
           DESTINATION celux
-          OPTIONAL)   # OPTIONAL just suppresses warnings if any DLL wasn’t globbed
+          OPTIONAL)   # OPTIONAL just suppresses warnings if any DLL wasn't globbed
 endif()
 
 if(UNIX AND CELUX_BUILD_PYTHON)
   # -- where vcpkg puts its .so’s for x64-linux-dynamic
+  # NOTE: FFmpeg .so files are NOT bundled - user must have FFmpeg installed
   if(DEFINED ENV{VCPKG_ROOT})
     file(TO_CMAKE_PATH "$ENV{VCPKG_ROOT}" _vcpkg_root_cmake)
     set(VCPKG_LIB "${_vcpkg_root_cmake}/installed/x64-linux-dynamic/lib")
@@ -449,21 +505,11 @@ if(UNIX AND CELUX_BUILD_PYTHON)
 
   set(CELUX_SO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/celux")
 
-  # glob all the .so files we depend on
+  # Only bundle vcpkg-provided libs (spdlog, fmt, libyuv) - NOT FFmpeg
   file(GLOB CELUX_SOS
-    "${VCPKG_LIB}/libavcodec.so*"
-    "${VCPKG_LIB}/libavformat.so*"
-    "${VCPKG_LIB}/libavutil.so*"
-    "${VCPKG_LIB}/libswscale.so*"
-    "${VCPKG_LIB}/libswresample.so*"
-    "${VCPKG_LIB}/libx264.so*"
-    "${VCPKG_LIB}/libx265.so*"
     "${VCPKG_LIB}/libspdlog.so*"
-    "${VCPKG_LIB}/libavfilter.so*"
     "${VCPKG_LIB}/libyuv.so*"
     "${VCPKG_LIB}/libfmt.so*"
-    "${VCPKG_LIB}/libturbojpeg.so*"
-    "${VCPKG_LIB}/libdav1d.so*"
   )
 
   foreach(sofile ${CELUX_SOS})

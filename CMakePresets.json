@@ -1,12 +1,10 @@
 ﻿{
   "version": 3,
-
   "cmakeMinimumRequired": {
     "major": 3,
     "minor": 23,
     "patch": 0
   },
-
   "configurePresets": [
     {
       "name": "windows-base",
@@ -14,19 +12,16 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "installDir": "${sourceDir}/out/install/${presetName}",
-
       "toolchainFile": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       },
-
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
       }
     },
-
     {
       "name": "x64-debug-cpu",
       "displayName": "x64 Debug (CPU)",
@@ -45,7 +40,6 @@
         "CELUX_ENABLE_CUDA": "OFF"
       }
     },
-
     {
       "name": "x64-release-cpu-baseline",
       "displayName": "x64 Release (CPU, baseline ISA)",
@@ -75,7 +69,6 @@
       }
     }
   ],
-
   "buildPresets": [
     {
       "name": "build-debug-cpu",

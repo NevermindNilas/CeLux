@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core", "pybind11", "wheel"]
+requires = ["scikit-build-core", "pybind11", "wheel", "torch"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -30,13 +30,7 @@ Issues = "https://github.com/NevermindNilas/CeLux/issues"
 [tool.scikit-build]
 cmake.build-type = "Release"
 ninja.make-fallback = true
-cmake.args = [
-  "-G", "Ninja",
-  "-DCMAKE_TOOLCHAIN_FILE=$ENV{VCPKG_TOOLCHAIN_FILE}",
-  "-DVCPKG_TARGET_TRIPLET=$ENV{VCPKG_TARGET_TRIPLET}",
-  "-DCMAKE_PREFIX_PATH=$ENV{VCPKG_ROOT}/installed/$ENV{VCPKG_TARGET_TRIPLET}",
-  "-DCMAKE_MODULE_PATH=$ENV{VCPKG_ROOT}/installed/$ENV{VCPKG_TARGET_TRIPLET}/share/ffmpeg"
-]
 
 [tool.scikit-build.cmake.define]
-CELUX_ENABLE_CUDA = {env="CELUX_ENABLE_CUDA", default="ON"}
+CELUX_ENABLE_CUDA = {env="CELUX_ENABLE_CUDA", default="OFF"}
+

@@ -90,11 +90,12 @@ jobs:
           7z x "$TempDir/ffmpeg.7z" -o"$TempDir/extracted" -y
 
           $FFmpegDir = Get-ChildItem -Path "$TempDir/extracted" -Directory | Select-Object -First 1
-          # Only copy lib and include - NOT bin (DLLs are not bundled)
+          # Copy all directories including bin (needed for running tests, but NOT bundled by CMake)
+          Copy-Item -Path "$($FFmpegDir.FullName)/bin" -Destination $OutputDir -Recurse -Force
           Copy-Item -Path "$($FFmpegDir.FullName)/lib" -Destination $OutputDir -Recurse -Force
           Copy-Item -Path "$($FFmpegDir.FullName)/include" -Destination $OutputDir -Recurse -Force
 
-          Write-Host "=== FFmpeg headers/libs installed for build ==="
+          Write-Host "=== FFmpeg installed (headers/libs for build, bin for testing) ==="
 
       # CUDA disabled for CI builds
       # - name: Setup CUDA toolkit
@@ -135,6 +136,10 @@ jobs:
         run: |
           echo "=== Installing wheel and testing import ==="
           pip install dist/*.whl --force-reinstall
+
+          # Add FFmpeg bin to PATH for the test
+          export PATH=$PATH:$(pwd)/external/ffmpeg/bin
+
           python -c "import torch, celux; print(f'torch: {torch.__version__}, celux: {celux.__version__}, CUDA support: {celux.__cuda_support__}')"
           echo "=== Import test passed ==="
 

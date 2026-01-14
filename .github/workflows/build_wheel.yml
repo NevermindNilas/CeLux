@@ -150,7 +150,12 @@ jobs:
           import torch
 
           print(f"Python: {sys.version}")
-          print(f"CWD: {os.getcwd()}")
+          cwd = os.getcwd()
+          ffmpeg_bin = os.path.join(cwd, "external", "ffmpeg", "bin")
+
+          if os.path.isdir(ffmpeg_bin) and hasattr(os, "add_dll_directory"):
+              print(f"Adding DLL directory: {ffmpeg_bin}")
+              os.add_dll_directory(ffmpeg_bin)
 
           # Expected FFmpeg 7.1/8.0 DLLs
           expected_dlls = [

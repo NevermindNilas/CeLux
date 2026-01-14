@@ -91,8 +91,8 @@ jobs:
 
           $FFmpegDir = Get-ChildItem -Path "$TempDir/extracted" -Directory | Select-Object -First 1
           # Only copy lib and include - NOT bin (DLLs are not bundled)
-          Copy-Item -Path "$FFmpegDir/lib" -Destination $OutputDir -Recurse -Force
-          Copy-Item -Path "$FFmpegDir/include" -Destination $OutputDir -Recurse -Force
+          Copy-Item -Path "$($FFmpegDir.FullName)/lib" -Destination $OutputDir -Recurse -Force
+          Copy-Item -Path "$($FFmpegDir.FullName)/include" -Destination $OutputDir -Recurse -Force
 
           Write-Host "=== FFmpeg headers/libs installed for build ==="
 

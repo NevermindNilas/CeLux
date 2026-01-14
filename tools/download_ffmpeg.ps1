@@ -17,7 +17,7 @@ Write-Host "=== FFmpeg Download Script ===" -ForegroundColor Cyan
 Write-Host "Output directory: $OutputDir" -ForegroundColor Gray
 
 # Check if already exists
-if ((Test-Path "$OutputDir\bin\avcodec-61.dll") -and -not $Force) {
+if ((Test-Path "$OutputDir\bin\avcodec-*.dll") -and -not $Force) {
     Write-Host "FFmpeg already exists at $OutputDir. Use -Force to re-download." -ForegroundColor Yellow
     exit 0
 }

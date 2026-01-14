@@ -147,48 +147,49 @@ jobs:
           import os
           import sys
           import ctypes
-          import torch
+          import glob
 
           print(f"Python: {sys.version}")
           cwd = os.getcwd()
+          print(f"CWD: {cwd}")
+
           ffmpeg_bin = os.path.join(cwd, "external", "ffmpeg", "bin")
 
-          if os.path.isdir(ffmpeg_bin) and hasattr(os, "add_dll_directory"):
-              print(f"Adding DLL directory: {ffmpeg_bin}")
-              os.add_dll_directory(ffmpeg_bin)
-
-          # Expected FFmpeg 7.1/8.0 DLLs
-          expected_dlls = [
-              "avcodec-62.dll", "avdevice-62.dll", "avfilter-11.dll", 
-              "avformat-62.dll", "avutil-60.dll", "swresample-6.dll", "swscale-9.dll"
-          ]
-
-          print("--- Checking FFmpeg DLL availability ---")
-          missing = []
-          for dll in expected_dlls:
-              try:
-                  ctypes.CDLL(dll)
-                  print(f"  [OK] Found {dll}")
-              except FileNotFoundError:
-                  print(f"  [MISSING] Could not find {dll}")
-                  missing.append(dll)
-              except OSError as e:
-                  print(f"  [ERROR] Found but failed to load {dll}: {e}")
-
-          if missing:
-              print(f"CRITICAL: {len(missing)} FFmpeg DLLs are missing from PATH.")
-              print(f"Current PATH: {os.environ['PATH']}")
-          else:
-              print("All expected FFmpeg DLLs are loadable.")
+          if os.path.exists(ffmpeg_bin):
+              print(f"Found FFmpeg bin at: {ffmpeg_bin}")
+              dll_files = [f for f in os.listdir(ffmpeg_bin) if f.endswith('.dll')]
+              print(f"DLLs in bin: {dll_files}")
               
+              if hasattr(os, "add_dll_directory"):
+                  print(f"Calling os.add_dll_directory('{ffmpeg_bin}')")
+                  try:
+                      os.add_dll_directory(ffmpeg_bin)
+                      print("  [OK] Added DLL directory.")
+                  except Exception as e:
+                      print(f"  [ERROR] Failed to add DLL directory: {e}")
+          else:
+              print(f"[ERROR] FFmpeg bin directory not found at: {ffmpeg_bin}")
+              ext_dir = os.path.join(cwd, "external", "ffmpeg")
+              if os.path.exists(ext_dir):
+                  print(f"Contents of {ext_dir}: {os.listdir(ext_dir)}")
+              else:
+                  print(f"{ext_dir} does not exist!")
+
           print("--- Importing CeLux ---")
           try:
               import celux
-              print(f"SUCCESS! celux: {celux.__version__}, torch: {torch.__version__}, CUDA: {celux.__cuda_support__}")
+              print(f"SUCCESS! celux: {celux.__version__}")
           except ImportError as e:
               print(f"FATAL: Import failed: {e}")
-              # On Python 3.8+ Windows, explicit DLL path addition might be needed if PATH doesn't work
-              # But pure PATH should work for ctypes/system load.
+              print("--- Diagnostic: Trying to load DLLs manually ---")
+              if os.path.exists(ffmpeg_bin):
+                  for dll in glob.glob(os.path.join(ffmpeg_bin, "avcodec*.dll")):
+                      try:
+                          print(f"Attempting to load {os.path.basename(dll)}...")
+                          ctypes.CDLL(dll)
+                          print("  [OK] Load successful")
+                      except OSError as dll_err:
+                          print(f"  [FAIL] Failed to load: {dll_err}")
               sys.exit(1)
           '@
 

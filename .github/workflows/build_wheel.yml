@@ -99,10 +99,10 @@ jobs:
           Write-Host "=== FFmpeg installed (headers/libs for build, bin for testing) ==="
 
       - name: Setup CUDA toolkit
-        uses: Jimver/cuda-toolkit@v0.2.29
+        uses: Jimver/cuda-toolkit@v0.2.30
         id: cuda-toolkit
         with:
-          cuda: "13.1.1"
+          cuda: "13.1.0"
           method: "network"
           sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 

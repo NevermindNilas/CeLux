@@ -84,7 +84,7 @@ jobs:
           New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
           Write-Host "Downloading FFmpeg (for build-time headers/libs only)..."
-          Invoke-WebRequest -Uri $FFmpegUrl -OutFile "$TempDir/ffmpeg.7z" -UseBasicParsing
+          Start-BitsTransfer -Source $FFmpegUrl -Destination "$TempDir/ffmpeg.7z"
 
           Write-Host "Extracting FFmpeg..."
           7z x "$TempDir/ffmpeg.7z" -o"$TempDir/extracted" -y
@@ -187,13 +187,15 @@ jobs:
               sys.exit(1)
           '@
 
-          python -c $Script
+          $Script | Set-Content -Path "debug_import.py" -Encoding UTF8
+          python debug_import.py
           write-host "=== Import test passed ==="
 
       - name: Upload Windows wheel
         uses: actions/upload-artifact@v4
         with:
           name: windows-wheel
+          path: "dist/*.whl"
 #  build-linux:
 #    runs-on: ubuntu-latest
 #    steps:

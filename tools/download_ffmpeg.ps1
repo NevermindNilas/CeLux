@@ -39,13 +39,13 @@ if (-not (Test-Path $TempDir)) {
 Write-Host "`n[1/3] Downloading FFmpeg shared build..." -ForegroundColor Green
 if (-not (Test-Path $ArchivePath) -or $Force) {
     try {
-        Invoke-WebRequest -Uri $FFmpegUrl -OutFile $ArchivePath -UseBasicParsing
+        Start-BitsTransfer -Source $FFmpegUrl -Destination $ArchivePath
         Write-Host "  Downloaded: $ArchivePath"
     }
     catch {
         Write-Host "  Failed to download from gyan.dev, trying GitHub mirror..." -ForegroundColor Yellow
         $GithubUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
-        Invoke-WebRequest -Uri $GithubUrl -OutFile "$TempDir\ffmpeg.zip" -UseBasicParsing
+        Start-BitsTransfer -Source $GithubUrl -Destination "$TempDir\ffmpeg.zip"
         $ArchivePath = "$TempDir\ffmpeg.zip"
     }
 }
@@ -74,7 +74,7 @@ if ($ArchivePath -like "*.7z") {
         $7zUrl = "https://www.7-zip.org/a/7zr.exe"
         $7zExe = Join-Path $TempDir "7zr.exe"
         if (-not (Test-Path $7zExe)) {
-            Invoke-WebRequest -Uri $7zUrl -OutFile $7zExe -UseBasicParsing
+            Start-BitsTransfer -Source $7zUrl -Destination $7zExe
         }
         & $7zExe x $ArchivePath -o"$ExtractDir" -y | Out-Null
     }

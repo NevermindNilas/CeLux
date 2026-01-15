@@ -409,12 +409,12 @@ if(CELUX_BUILD_PYTHON)
 
   if(CELUX_ENABLE_CUDA)
     target_compile_definitions(celux PRIVATE CELUX_ENABLE_CUDA)
-    
+
     if(MSVC AND TARGET CeLuxCuda)
       target_link_options(celux PRIVATE
-        "/WHOLEARCHIVE:$<TARGET_FILE:CeLuxLib>"
+        "/WHOLEARCHIVE:$<TARGET_FILE:CeLuxCuda>"
       )
-      message(STATUS "MSVC: Using /WHOLEARCHIVE for CeLuxLib to include all CUDA kernels in celux")
+      message(STATUS "MSVC: Using /WHOLEARCHIVE for CeLuxCuda to include all CUDA kernels in celux")
     endif()
   endif()
 

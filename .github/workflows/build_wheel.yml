@@ -106,7 +106,7 @@ jobs:
           method: "local"
           use-github-cache: true
           use-local-cache: true
-          sub-packages: '["nvcc", "cudart", "visual_studio_integration", "thrust", "nvrtc", "nvrtc_dev"]'
+          sub-packages: '["nvcc", "cudart", "cuda_cudart", "cuda_crt", "visual_studio_integration", "thrust", "nvrtc", "nvrtc_dev"]'
 
       - name: Verify CUDA installation
         shell: bash
@@ -115,9 +115,12 @@ jobs:
           ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
           "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
 
-          echo "Checking for crt/host_config.h..."
+          echo "Checking for host_config.h..."
+          # CUDA 13.x moved host_config.h - check both possible locations
           if [ -f "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/include/crt/host_config.h" ]; then
-            echo "SUCCESS: host_config.h found."
+            echo "SUCCESS: host_config.h found at include/crt/"
+          elif [ -f "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/include/host_config.h" ]; then
+            echo "SUCCESS: host_config.h found at include/ (CUDA 13.x location)"
           else
             echo "FATAL: host_config.h NOT found!"
             echo "CUDA installation is incomplete. Cannot build CUDA wheel."

@@ -103,10 +103,10 @@ jobs:
         id: cuda-toolkit
         with:
           cuda: "13.1.0"
-          method: "network"
+          method: "local"
           use-github-cache: true
-          use-local-cache: false
-          # sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+          use-local-cache: true
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration", "thrust", "nvrtc", "nvrtc_dev"]'
 
       - name: Verify CUDA installation
         shell: bash

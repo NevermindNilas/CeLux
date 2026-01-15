@@ -8,7 +8,7 @@ env:
 
 jobs:
   build-windows:
-    runs-on: [windows-latest, self-hosted]
+    runs-on: windows-latest
     env:
       SKBUILD_CONFIG: Release
       VCPKG_TARGET_TRIPLET: x64-windows-release

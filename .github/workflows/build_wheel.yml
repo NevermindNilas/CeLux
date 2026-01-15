@@ -151,9 +151,46 @@ jobs:
           # Use --no-build-isolation so we usage the pre-installed CUDA-enabled Torch
           python -m pip wheel . --no-deps --no-build-isolation -w dist -v
 
+      - name: Repair wheel with delvewheel (bundle DLLs)
+        shell: powershell
+        run: |
+          Write-Host "=== Installing delvewheel ==="
+          pip install delvewheel
+
+          Write-Host "=== Setting up DLL search paths ==="
+          # Add all DLL directories to PATH for delvewheel to find dependencies
+          $VcpkgBin = Join-Path $env:RUNNER_TEMP "vcpkg\installed\x64-windows-release\bin"
+          $CudaBin = Join-Path $env:CUDA_PATH "bin"
+
+          Write-Host "VCPKG bin: $VcpkgBin"
+          Write-Host "CUDA bin: $CudaBin"
+
+          # Find the wheel file
+          $WheelFile = Get-ChildItem dist/*.whl | Select-Object -First 1
+          Write-Host "Repairing wheel: $($WheelFile.FullName)"
+
+          # Create repaired output directory
+          New-Item -ItemType Directory -Path dist_repaired -Force | Out-Null
+
+          # Run delvewheel repair with additional paths
+          # --add-path adds directories to search for DLLs
+          # --no-mangle prevents renaming DLLs (optional, depends on your needs)
+          delvewheel repair $WheelFile.FullName `
+            --add-path "$VcpkgBin" `
+            --add-path "$CudaBin" `
+            --wheel-dir dist_repaired `
+            -v
+
+          # Replace original wheel with repaired one
+          Remove-Item dist/*.whl -Force
+          Move-Item dist_repaired/*.whl dist/
+          Remove-Item dist_repaired -Recurse -Force
+
+          Write-Host "=== Wheel repair complete ==="
+
       - name: List wheel contents
         run: |
-          echo "=== Wheel contents (note: FFmpeg DLLs are NOT bundled) ==="
+          echo "=== Wheel contents (CUDA DLLs bundled via delvewheel, FFmpeg NOT bundled) ==="
           unzip -l dist/*.whl | grep celux/
 
       - name: Test wheel import

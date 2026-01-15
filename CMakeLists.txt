@@ -329,6 +329,17 @@ if(CELUX_ENABLE_CUDA)
   target_compile_definitions(CeLuxLib PUBLIC CELUX_ENABLE_CUDA)
   if(TARGET CeLuxCuda)
     target_link_libraries(CeLuxLib PUBLIC CeLuxCuda)
+    
+    # On Windows/MSVC, force the linker to include ALL symbols from CeLuxCuda
+    # Without this, MSVC strips "unreferenced" CUDA kernels since Bindings.cpp 
+    # doesn't directly call them (they're invoked via function pointers/registration)
+    if(MSVC)
+      # Use /WHOLEARCHIVE to force all .cu object files to be linked
+      target_link_options(CeLuxLib PUBLIC 
+        "/WHOLEARCHIVE:$<TARGET_FILE:CeLuxCuda>"
+      )
+      message(STATUS "MSVC: Using /WHOLEARCHIVE for CeLuxCuda to prevent kernel stripping")
+    endif()
   endif()
 endif()
 

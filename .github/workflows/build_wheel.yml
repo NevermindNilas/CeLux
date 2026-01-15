@@ -106,7 +106,7 @@ jobs:
           method: "local"
           use-github-cache: true
           use-local-cache: true
-          sub-packages: '["nvcc", "cudart", "cuda_cudart", "cuda_crt", "visual_studio_integration", "thrust", "nvrtc", "nvrtc_dev"]'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration", "thrust", "nvrtc", "nvrtc_dev"]'
 
       - name: Verify CUDA installation
         shell: bash

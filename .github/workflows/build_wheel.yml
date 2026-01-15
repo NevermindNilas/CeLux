@@ -173,9 +173,19 @@ jobs:
           $TorchSite = python -c "import torch, os; print(os.path.dirname(torch.__file__))"
           $TorchLib = Join-Path $TorchSite "lib"
 
+          # FFmpeg DLLs (for build/test, but NOT bundled)
+          $FFmpegBin = "${{ github.workspace }}/external/ffmpeg/bin"
+
+          # Dynamically get list of ALL FFmpeg DLLs to exclude them
+          # This ensures we don't bundle ANY FFmpeg DLLs, regardless of version (avcodec-61 vs 62 etc)
+          $FFmpegDlls = Get-ChildItem -Path $FFmpegBin -Filter "*.dll" | Select-Object -ExpandProperty Name
+          $FFmpegExclude = $FFmpegDlls -join ";"
+
           Write-Host "VCPKG bin: $VcpkgBin"
           Write-Host "CUDA bin: $CudaBin"
           Write-Host "Torch lib: $TorchLib"
+          Write-Host "FFmpeg bin: $FFmpegBin"
+          Write-Host "Excluding FFmpeg DLLs: $FFmpegExclude"
 
           # Find the wheel file
           $WheelFile = Get-ChildItem dist/*.whl | Select-Object -First 1
@@ -185,13 +195,14 @@ jobs:
           New-Item -ItemType Directory -Path dist_repaired -Force | Out-Null
 
           # Run delvewheel repair with additional paths
-          # --add-path: helps delvewheel find the DLLs (Torch, CUDA, VCPKG)
-          # --exclude: prevents bundling of Torch DLLs (user must provide them)
+          # --add-path: helps delvewheel find the DLLs (Torch, CUDA, VCPKG, FFmpeg)
+          # --exclude: prevents bundling of Torch & FFmpeg DLLs (user must provide them)
           delvewheel repair $WheelFile.FullName `
             --add-path "$VcpkgBin" `
             --add-path "$CudaBin" `
             --add-path "$TorchLib" `
-            --exclude "torch_cpu.dll;c10.dll;torch_python.dll;torch.dll;torch_cuda.dll" `
+            --add-path "$FFmpegBin" `
+            --exclude "torch_cpu.dll;c10.dll;torch_python.dll;torch.dll;torch_cuda.dll;$FFmpegExclude" `
             --wheel-dir dist_repaired `
             -v
 

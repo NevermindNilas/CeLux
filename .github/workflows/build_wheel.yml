@@ -104,6 +104,8 @@ jobs:
         with:
           cuda: "13.1.0"
           method: "network"
+          use-github-cache: true
+          use-local-cache: false
           # sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 
       - name: Verify CUDA installation
@@ -117,8 +119,10 @@ jobs:
           if [ -f "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/include/crt/host_config.h" ]; then
             echo "SUCCESS: host_config.h found."
           else
-            echo "ERROR: host_config.h NOT found!"
-            find "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" -name "host_config.h"
+            echo "FATAL: host_config.h NOT found!"
+            echo "CUDA installation is incomplete. Cannot build CUDA wheel."
+            find "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" -name "host_config.h" || true
+            exit 1
           fi
 
       - name: Build Windows wheel
@@ -203,8 +207,12 @@ jobs:
               
               if hasattr(celux, "__cuda_support__"):
                   print(f"CUDA Support: {celux.__cuda_support__}")
+                  if not celux.__cuda_support__:
+                      print("FATAL: Wheel was built without CUDA support!")
+                      sys.exit(1)
               else:
                   print("CUDA Support: [UNKNOWN] (__cuda_support__ not found)")
+                  sys.exit(1)
           except ImportError as e:
               print(f"FATAL: Import failed: {e}")
               print("--- Diagnostic: Trying to load DLLs manually ---")

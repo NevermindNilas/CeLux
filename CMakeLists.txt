@@ -112,9 +112,12 @@ if(CELUX_ENABLE_CUDA)
       set(CMAKE_CUDA_ARCHITECTURES "60;70;75;80;86;89;90" CACHE STRING "CUDA architectures")
     endif()
   else()
-    message(WARNING "CELUX_ENABLE_CUDA is ON but no CUDA compiler found. CUDA features disabled.")
-    message(WARNING "Set CUDA_PATH environment variable or CMAKE_CUDA_COMPILER to enable CUDA.")
-    set(CELUX_ENABLE_CUDA OFF CACHE BOOL "Enable CUDA support in CeLux" FORCE)
+    message(FATAL_ERROR 
+      "CELUX_ENABLE_CUDA is ON but no CUDA compiler found!\n"
+      "The build cannot continue without CUDA when explicitly requested.\n"
+      "Ensure CUDA Toolkit is installed and CUDA_PATH is set correctly.\n"
+      "If you want a CPU-only build, set -DCELUX_ENABLE_CUDA=OFF"
+    )
   endif()
 endif()
 

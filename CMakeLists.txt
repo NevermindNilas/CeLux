@@ -404,6 +404,10 @@ if(CELUX_BUILD_PYTHON)
     $<$<AND:$<BOOL:${CELUX_BUILD_PYTHON}>,$<BOOL:${CELUX_ENABLE_CUDA}>>:c10_cuda>
   )
 
+  if(CELUX_ENABLE_CUDA)
+    target_compile_definitions(celux PRIVATE CELUX_ENABLE_CUDA)
+  endif()
+
   set_target_properties(celux PROPERTIES
     PREFIX ""
     OUTPUT_NAME "_celux"

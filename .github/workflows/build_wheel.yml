@@ -169,8 +169,13 @@ jobs:
           $VcpkgBin = Join-Path $env:RUNNER_TEMP "vcpkg\installed\x64-windows-release\bin"
           $CudaBin = Join-Path $env:CUDA_PATH "bin"
 
+          # Locating Torch DLLs (needed so delvewheel finds them, but we EXCLUDE them from bundling)
+          $TorchSite = python -c "import torch, os; print(os.path.dirname(torch.__file__))"
+          $TorchLib = Join-Path $TorchSite "lib"
+
           Write-Host "VCPKG bin: $VcpkgBin"
           Write-Host "CUDA bin: $CudaBin"
+          Write-Host "Torch lib: $TorchLib"
 
           # Find the wheel file
           $WheelFile = Get-ChildItem dist/*.whl | Select-Object -First 1
@@ -180,11 +185,13 @@ jobs:
           New-Item -ItemType Directory -Path dist_repaired -Force | Out-Null
 
           # Run delvewheel repair with additional paths
-          # --add-path adds directories to search for DLLs
-          # --no-mangle prevents renaming DLLs (optional, depends on your needs)
+          # --add-path: helps delvewheel find the DLLs (Torch, CUDA, VCPKG)
+          # --exclude: prevents bundling of Torch DLLs (user must provide them)
           delvewheel repair $WheelFile.FullName `
             --add-path "$VcpkgBin" `
             --add-path "$CudaBin" `
+            --add-path "$TorchLib" `
+            --exclude "torch_cpu.dll;c10.dll;torch_python.dll;torch.dll;torch_cuda.dll" `
             --wheel-dir dist_repaired `
             -v
 

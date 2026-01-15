@@ -39,12 +39,43 @@ VideoReader::VideoReader(const std::string& filePath, int numThreads, bool force
                 ? torch::Device(torch::kCUDA, cuda_device_index)
                 : torch::Device(torch::kCPU);
 
-        // Main sequential decoder
-        decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
-                                                decodeAccelerator, cuda_device_index);
-        decoder->setForce8Bit(force_8bit);
-        CELUX_INFO("Main decoder created successfully with accelerator: {}",
-                   decode_accelerator);
+        // Main sequential decoder with fallback logic
+        if (decodeAccelerator == celux::DecodeAccelerator::NVDEC)
+        {
+            try
+            {
+                // Try NVDEC first
+                decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
+                                                        decodeAccelerator, cuda_device_index);
+                decoder->setForce8Bit(force_8bit);
+                CELUX_INFO("Main decoder created successfully with accelerator: {}",
+                           decode_accelerator);
+            }
+            catch (const std::exception& nvdec_ex)
+            {
+                // NVDEC failed - fall back to CPU decoder
+                CELUX_WARN("NVDEC decoder failed: {}. Falling back to CPU decoder.",
+                           nvdec_ex.what());
+                
+                // Update internal state to reflect CPU fallback
+                decodeAccelerator = celux::DecodeAccelerator::CPU;
+                torchDevice = torch::Device(torch::kCPU);
+                
+                decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
+                                                        celux::DecodeAccelerator::CPU, 0);
+                decoder->setForce8Bit(force_8bit);
+                CELUX_INFO("Fallback to CPU decoder successful after NVDEC failure");
+            }
+        }
+        else
+        {
+            // Direct CPU decoder path
+            decoder = celux::Factory::createDecoder(torchDevice, filePath, numThreads,
+                                                    decodeAccelerator, cuda_device_index);
+            decoder->setForce8Bit(force_8bit);
+            CELUX_INFO("Main decoder created successfully with accelerator: {}",
+                       decode_accelerator);
+        }
 
         // Random-access decoder is now lazy-loaded in ensureRandDecoder()
 
@@ -558,9 +589,33 @@ void VideoReader::ensureRandDecoder()
             (decodeAccelerator == celux::DecodeAccelerator::NVDEC)
                 ? torch::Device(torch::kCUDA, cudaDeviceIndex)
                 : torch::Device(torch::kCPU);
-        rand_decoder = celux::Factory::createDecoder(
-            torchDevice, filePath, numThreads, decodeAccelerator, cudaDeviceIndex);
-        rand_decoder->setForce8Bit(force_8bit);
+        
+        if (decodeAccelerator == celux::DecodeAccelerator::NVDEC)
+        {
+            try
+            {
+                // Try NVDEC first for random decoder too
+                rand_decoder = celux::Factory::createDecoder(
+                    torchDevice, filePath, numThreads, decodeAccelerator, cudaDeviceIndex);
+                rand_decoder->setForce8Bit(force_8bit);
+            }
+            catch (const std::exception& nvdec_ex)
+            {
+                // NVDEC failed - fall back to CPU decoder for random access
+                CELUX_WARN("NVDEC rand_decoder failed: {}. Falling back to CPU.",
+                           nvdec_ex.what());
+                rand_decoder = celux::Factory::createDecoder(
+                    torch::Device(torch::kCPU), filePath, numThreads,
+                    celux::DecodeAccelerator::CPU, 0);
+                rand_decoder->setForce8Bit(force_8bit);
+            }
+        }
+        else
+        {
+            rand_decoder = celux::Factory::createDecoder(
+                torchDevice, filePath, numThreads, decodeAccelerator, cudaDeviceIndex);
+            rand_decoder->setForce8Bit(force_8bit);
+        }
     }
 }
 

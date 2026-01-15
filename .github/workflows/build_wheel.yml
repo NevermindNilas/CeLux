@@ -2,14 +2,13 @@ name: Build Wheels Only
 
 on:
   workflow_dispatch:
-
 env:
   PYTHON_VERSION: "3.13"
   VCPKG_LIBRARY_LINKAGE: dynamic
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    runs-on: [windows-latest, self-hosted]
     env:
       SKBUILD_CONFIG: Release
       VCPKG_TARGET_TRIPLET: x64-windows-release
@@ -106,21 +105,26 @@ jobs:
           method: "local"
           use-github-cache: true
           use-local-cache: true
-          sub-packages: '["nvcc", "cudart", "visual_studio_integration", "thrust", "nvrtc", "nvrtc_dev"]'
 
-      - name: Verify CUDA installation
+      - name: Verify and Fix CUDA installation
         shell: bash
         run: |
           echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
           ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
           "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
 
-          echo "Checking for host_config.h..."
-          # CUDA 13.x moved host_config.h - check both possible locations
-          if [ -f "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/include/crt/host_config.h" ]; then
+          CUDA_INC="${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/include"
+          echo "Checking for host_config.h in $CUDA_INC..."
+
+          # CUDA 13.x moved host_config.h - fix by ensuring it exists in include/crt/
+          if [ -f "$CUDA_INC/crt/host_config.h" ]; then
             echo "SUCCESS: host_config.h found at include/crt/"
-          elif [ -f "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/include/host_config.h" ]; then
-            echo "SUCCESS: host_config.h found at include/ (CUDA 13.x location)"
+          elif [ -f "$CUDA_INC/host_config.h" ]; then
+            echo "FOUND: host_config.h at include/ (CUDA 13.x location)"
+            echo "FIXING: Copying to include/crt/host_config.h for compatibility..."
+            mkdir -p "$CUDA_INC/crt"
+            cp "$CUDA_INC/host_config.h" "$CUDA_INC/crt/host_config.h"
+            echo "FIX APPLIED."
           else
             echo "FATAL: host_config.h NOT found!"
             echo "CUDA installation is incomplete. Cannot build CUDA wheel."

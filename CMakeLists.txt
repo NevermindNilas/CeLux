@@ -474,19 +474,44 @@ if(WIN32 AND CELUX_BUILD_PYTHON)
 
   if(CELUX_ENABLE_CUDA)
     find_package(CUDAToolkit REQUIRED)
+    message(STATUS "[CUDA DEBUG] CUDAToolkit_FOUND: ${CUDAToolkit_FOUND}")
+    message(STATUS "[CUDA DEBUG] CUDAToolkit_BIN_DIR: ${CUDAToolkit_BIN_DIR}")
+    message(STATUS "[CUDA DEBUG] ENV{CUDA_PATH}: $ENV{CUDA_PATH}")
+    
     if(CUDAToolkit_FOUND AND DEFINED CUDAToolkit_BIN_DIR)
       file(TO_CMAKE_PATH "${CUDAToolkit_BIN_DIR}" CUDA_BIN_DIR)
     elseif(DEFINED ENV{CUDA_PATH})
       file(TO_CMAKE_PATH "$ENV{CUDA_PATH}/bin" CUDA_BIN_DIR)
     endif()
 
+    message(STATUS "[CUDA DEBUG] Resolved CUDA_BIN_DIR: ${CUDA_BIN_DIR}")
+
     if(DEFINED CUDA_BIN_DIR)
+      # List all DLLs in CUDA bin for debugging
+      file(GLOB _cuda_bin_all_dlls "${CUDA_BIN_DIR}/*.dll")
+      message(STATUS "[CUDA DEBUG] All DLLs in CUDA bin (first 10): ")
+      list(LENGTH _cuda_bin_all_dlls _cuda_dll_count)
+      if(_cuda_dll_count GREATER 0)
+        list(SUBLIST _cuda_bin_all_dlls 0 10 _cuda_bin_sample)
+        foreach(_dll ${_cuda_bin_sample})
+          message(STATUS "  - ${_dll}")
+        endforeach()
+      else()
+        message(WARNING "[CUDA DEBUG] NO DLLs found in ${CUDA_BIN_DIR}!")
+      endif()
+
       file(GLOB CELUX_CUDA_DLLS
         "${CUDA_BIN_DIR}/cudart64_*.dll"
         "${CUDA_BIN_DIR}/nvrtc64_*.dll"
       )
-      list(APPEND CELUX_DLLS ${CELUX_CUDA_DLLS})
-      message(STATUS "CUDA DLLs to bundle from ${CUDA_BIN_DIR}: ${CELUX_CUDA_DLLS}")
+      
+      list(LENGTH CELUX_CUDA_DLLS _cuda_dlls_found)
+      if(_cuda_dlls_found GREATER 0)
+        list(APPEND CELUX_DLLS ${CELUX_CUDA_DLLS})
+        message(STATUS "[CUDA DEBUG] Found ${_cuda_dlls_found} CUDA DLLs to bundle: ${CELUX_CUDA_DLLS}")
+      else()
+        message(WARNING "[CUDA DEBUG] GLOB found NO cudart64_*.dll or nvrtc64_*.dll in ${CUDA_BIN_DIR}!")
+      endif()
     else()
       message(WARNING "Could not determine CUDA BIN directory. CUDA DLLs will not be bundled!")
     endif()

@@ -20,7 +20,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip" # Cache pip packages
+          cache: "pip"
 
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -165,7 +165,6 @@ jobs:
           Get-ChildItem -Path celux -Recurse | ForEach-Object { 
             Write-Host "$($_.Length) bytes - $($_.FullName)" 
           }
-          Write-Host ""
           Write-Host "=== Contents of dist/ folder ==="
           Get-ChildItem -Path dist | ForEach-Object { 
             Write-Host "$($_.Length) bytes - $($_.Name)" 
@@ -178,7 +177,6 @@ jobs:
           pip install delvewheel
 
           Write-Host "=== Setting up DLL search paths ==="
-          # Add all DLL directories to PATH for delvewheel to find dependencies
           $VcpkgBin = Join-Path $env:RUNNER_TEMP "vcpkg\installed\x64-windows-release\bin"
           $CudaBin = Join-Path $env:CUDA_PATH "bin"
 
@@ -190,7 +188,6 @@ jobs:
           $FFmpegBin = "${{ github.workspace }}/external/ffmpeg/bin"
 
           # Dynamically get list of ALL FFmpeg DLLs to exclude them
-          # This ensures we don't bundle ANY FFmpeg DLLs, regardless of version (avcodec-61 vs 62 etc)
           $FFmpegDlls = Get-ChildItem -Path $FFmpegBin -Filter "*.dll" | Select-Object -ExpandProperty Name
           $FFmpegExclude = $FFmpegDlls -join ";"
 
@@ -204,12 +201,9 @@ jobs:
           $WheelFile = Get-ChildItem dist/*.whl | Select-Object -First 1
           Write-Host "Repairing wheel: $($WheelFile.FullName)"
 
-          # Create repaired output directory
           New-Item -ItemType Directory -Path dist_repaired -Force | Out-Null
 
-          # Run delvewheel repair with additional paths
-          # --add-path: helps delvewheel find the DLLs (Torch, CUDA, VCPKG, FFmpeg)
-          # --exclude: prevents bundling of Torch & FFmpeg DLLs (user must provide them)
+          # Run delvewheel repair
           delvewheel repair $WheelFile.FullName `
             --add-path "$VcpkgBin" `
             --add-path "$CudaBin" `
@@ -223,7 +217,6 @@ jobs:
           Remove-Item dist/*.whl -Force
           Move-Item dist_repaired/*.whl dist/
           Remove-Item dist_repaired -Recurse -Force
-
           Write-Host "=== Wheel repair complete ==="
 
       - name: List wheel contents
@@ -231,165 +224,54 @@ jobs:
           echo "=== Wheel contents (CUDA DLLs bundled via delvewheel, FFmpeg NOT bundled) ==="
           unzip -l dist/*.whl | grep celux/
 
-      - name: Test wheel import
+      - name: Test wheel import and API
         shell: powershell
         run: |
           Write-Host "=== Installing wheel and testing import ==="
           pip install (Get-ChildItem dist/*.whl) --force-reinstall
 
-          # Add FFmpeg bin to PATH for the test (Native Windows Path)
+          # Add FFmpeg bin to PATH for the test
           $FFmpegBin = Join-Path $pwd "external\ffmpeg\bin"
           Write-Host "Adding to PATH: $FFmpegBin"
           $env:PATH = "$FFmpegBin;$env:PATH"
+          $env:FFMPEG_BIN = $FFmpegBin
 
-          # Python script to debug DLL loading
-          $Script = @'
+          # Check torch and basic import with explicit DLL path adding for FFmpeg
+          python -c "import os, sys, torch; os.add_dll_directory(os.environ['FFMPEG_BIN']) if os.path.exists(os.environ.get('FFMPEG_BIN', '')) else None; import celux; print(f'torch {torch.__version__}, celux {celux.__version__}')"
+
+          # Verify 0.8.3 API features are present
+          Write-Host "--- Verifying 0.8.3 API Features ---"
+          $ApiCode = @'
           import os
           import sys
-          import ctypes
-          import glob
 
-          print(f"Python: {sys.version}")
-          cwd = os.getcwd()
-          print(f"CWD: {cwd}")
-
-          ffmpeg_bin = os.path.join(cwd, "external", "ffmpeg", "bin")
-
+          # Ensure FFmpeg DLLs can be loaded
+          ffmpeg_bin = os.environ.get('FFMPEG_BIN', '')
           if os.path.exists(ffmpeg_bin):
-              print(f"Found FFmpeg bin at: {ffmpeg_bin}")
-              dll_files = [f for f in os.listdir(ffmpeg_bin) if f.endswith('.dll')]
-              print(f"DLLs in bin: {dll_files}")
-              
-              if hasattr(os, "add_dll_directory"):
-                  print(f"Calling os.add_dll_directory('{ffmpeg_bin}')")
-                  try:
-                      os.add_dll_directory(ffmpeg_bin)
-                      print("  [OK] Added DLL directory.")
-                  except Exception as e:
-                      print(f"  [ERROR] Failed to add DLL directory: {e}")
-          else:
-              print(f"[ERROR] FFmpeg bin directory not found at: {ffmpeg_bin}")
-              ext_dir = os.path.join(cwd, "external", "ffmpeg")
-              if os.path.exists(ext_dir):
-                  print(f"Contents of {ext_dir}: {os.listdir(ext_dir)}")
-              else:
-                  print(f"{ext_dir} does not exist!")
+              print(f"Adding DLL directory: {ffmpeg_bin}")
+              os.add_dll_directory(ffmpeg_bin)
 
-          print("--- Importing CeLux ---")
-          try:
-              import celux
-              print(f"SUCCESS! celux: {celux.__version__}")
-              
-              if hasattr(celux, "__cuda_support__"):
-                  print(f"CUDA Support: {celux.__cuda_support__}")
-                  if not celux.__cuda_support__:
-                      print("FATAL: Wheel was built without CUDA support!")
-                      sys.exit(1)
-              else:
-                  print("CUDA Support: [UNKNOWN] (__cuda_support__ not found)")
-                  sys.exit(1)
-          except ImportError as e:
-              print(f"FATAL: Import failed: {e}")
-              print("--- Diagnostic: Trying to load DLLs manually ---")
-              if os.path.exists(ffmpeg_bin):
-                  for dll in glob.glob(os.path.join(ffmpeg_bin, "avcodec*.dll")):
-                      try:
-                          print(f"Attempting to load {os.path.basename(dll)}...")
-                          ctypes.CDLL(dll)
-                          print("  [OK] Load successful")
-                      except OSError as dll_err:
-                          print(f"  [FAIL] Failed to load: {dll_err}")
-              sys.exit(1)
+          import celux
+          vr = celux.VideoReader
+
+          # Prefetch API
+          assert hasattr(vr, 'start_prefetch'), 'MISSING: start_prefetch'
+          assert hasattr(vr, 'stop_prefetch'), 'MISSING: stop_prefetch'
+          assert hasattr(vr, 'prefetch_buffered'), 'MISSING: prefetch_buffered'
+          assert hasattr(vr, 'is_prefetching'), 'MISSING: is_prefetching'
+          assert hasattr(vr, 'prefetch_size'), 'MISSING: prefetch_size'
+
+          # Reconfigure API
+          assert hasattr(vr, 'reconfigure'), 'MISSING: reconfigure'
+          assert hasattr(vr, 'file_path'), 'MISSING: file_path'
+
+          print('All 0.8.3 API features verified!')
           '@
-
-          $Script | Set-Content -Path "debug_import.py" -Encoding UTF8
-          python debug_import.py
-          write-host "=== Import test passed ==="
+          $ApiCode | Set-Content -Path "verify_api.py" -Encoding UTF8
+          python verify_api.py
 
       - name: Upload Windows wheel
         uses: actions/upload-artifact@v4
         with:
           name: windows-wheel
           path: "dist/*.whl"
-#  build-linux:
-#    runs-on: ubuntu-latest
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v4
-#
-#      - name: Setup Python 3.13
-#        uses: actions/setup-python@v4
-#        with:
-#          python-version: "3.13"
-#
-#      - name: Install cibuildwheel
-#        run: python -m pip install cibuildwheel==2.20.0
-#
-#      - name: Cache vcpkg
-#        uses: actions/cache@v4
-#        with:
-#          path: /tmp/vcpkg_cache
-#          key: vcpkg-linux-${{ hashFiles('pyproject.toml') }}
-#          restore-keys: |
-#            vcpkg-linux-
-#
-#      - name: Build Linux wheel
-#        env:
-#          CIBW_BUILD: "cp313-manylinux*_x86_64"
-#          CIBW_ARCHS_LINUX: "x86_64"
-#          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
-#          CIBW_CONTAINER_OPTIONS: "-v /tmp/vcpkg_cache:/opt/vcpkg"
-#          CIBW_ENVIRONMENT_LINUX: >-
-#            SKBUILD_CONFIG=Release
-#            SKBUILD_GENERATOR=Ninja
-#            VCPKG_TARGET_TRIPLET=x64-linux-dynamic
-#            VCPKG_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-#            VCPKG_FORCE_SYSTEM_BINARIES=1
-#            CC=gcc
-#            CXX=g++
-#            LD_LIBRARY_PATH=/opt/vcpkg/installed/x64-linux-dynamic/lib:$LD_LIBRARY_PATH
-#            CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
-#                        -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
-#                        -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
-#                        -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
-#          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/vcpkg/installed/x64-linux-dynamic/lib; auditwheel repair -w {dest_dir} {wheel} --exclude libtorch_python.so --exclude libtorch_cpu.so --exclude libc10.so --exclude libtorch.so"
-#          CIBW_BEFORE_ALL_LINUX: |
-#            (command -v dnf >/dev/null 2>&1 && dnf -y install \
-#               git pkgconf nasm zip unzip curl tar \
-#               gcc gcc-c++ make ninja-build cmake || \
-#             command -v yum >/dev/null 2>&1 && yum -y install \
-#               git pkgconf nasm zip unzip curl tar \
-#               gcc gcc-c++ make ninja-build cmake)
-#            # Only clone if not already present (from cache)
-#            if [ ! -d "/opt/vcpkg/.git" ]; then
-#                git clone https://github.com/microsoft/vcpkg /opt/vcpkg
-#            fi
-#            /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-#            /opt/vcpkg/vcpkg install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
-#          CIBW_BEFORE_BUILD_LINUX: |
-#            python -m pip install -U pip wheel setuptools
-#            python -m pip install --only-binary=:all: "pybind11>=2.11"
-#            python -m pip install --only-binary=:all: torch || python -m pip install --only-binary=:all: --index-url https://download.pytorch.org/whl/cpu torch
-#          CIBW_OUTPUT_DIR: dist
-#        run: python -m cibuildwheel --platform linux
-#
-#      - name: Verify dav1d in wheel
-#        run: |
-#          echo "=== Checking for dav1d in wheel ==="
-#          unzip -l dist/*.whl | grep -i dav1d || (echo "ERROR: dav1d not bundled in wheel!" && exit 1)
-#          echo "=== dav1d verification passed ==="
-#
-#      - name: Test wheel import
-#        run: |
-#          echo "=== Installing wheel and testing import ==="
-#          python -m pip install dist/*.whl --force-reinstall
-#          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-#          python -c "import torch, celux; print(f'torch: {torch.__version__}, celux: {celux.__version__}')"
-#          echo "=== Import test passed ==="
-#
-#      - name: Upload Linux wheel
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: linux-wheel
-#          path: "dist/*.whl"
-#

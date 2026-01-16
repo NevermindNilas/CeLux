@@ -29,7 +29,7 @@ Backend backendFromString(const std::string& backend_str)
 PYBIND11_MODULE(_celux, m)
 {
     m.doc() = "celux – lightspeed video decoding into tensors";
-    m.attr("__version__") = "0.8.2";
+    m.attr("__version__") = "0.8.3";
 
     // Expose CUDA build status
 #ifdef CELUX_ENABLE_CUDA
@@ -195,7 +195,82 @@ Uses the secondary decoder; does not disturb iteration.)doc")
         // Bind getAudio()
         // -------------------
         .def("get_audio", &VideoReader::getAudio,
-             py::return_value_policy::reference_internal, "Retrieve the Audio object");
+             py::return_value_policy::reference_internal, "Retrieve the Audio object")
+        // -------------------
+        // Prefetch Control API
+        // -------------------
+        .def("start_prefetch", &VideoReader::startPrefetch,
+             py::arg("buffer_size") = 16,
+             py::arg("start_immediately") = true,
+             R"doc(Start background frame prefetching for improved iteration performance.
+
+Prefetching decodes frames in a background thread, filling a buffer.
+When iterating, frames are returned from the buffer for near-zero latency.
+This is especially useful for ML pipelines where the GPU is busy with
+inference while the CPU can be decoding the next frames.
+
+Args:
+    buffer_size (int, optional): Number of frames to buffer ahead. Default is 16.
+        Larger values use more memory but provide more tolerance for variable
+        processing times. Recommended: 8-32 for typical ML pipelines.
+    start_immediately (bool, optional): If True (default), start the background
+        decode thread immediately. If False, prefetching starts on first frame access.
+
+Example:
+    >>> reader = VideoReader("video.mp4")
+    >>> reader.start_prefetch(buffer_size=16)  # Start buffering
+    >>> for frame in reader:  # Frames returned near-instantly from buffer
+    ...     result = model.inference(frame)
+    >>> reader.stop_prefetch()
+)doc")
+        .def("stop_prefetch", &VideoReader::stopPrefetch,
+             R"doc(Stop background prefetching and clear the buffer.
+
+Call this when:
+- Switching to random access mode (frame_at)
+- Done iterating and want to free resources
+- Need to seek to a different position
+)doc")
+        .def_property_readonly("prefetch_buffered", &VideoReader::getPrefetchBufferedCount,
+             "Number of frames currently in the prefetch buffer (read-only)")
+        .def_property_readonly("is_prefetching", &VideoReader::isPrefetching,
+             "True if the background prefetch thread is currently running (read-only)")
+        .def_property_readonly("prefetch_size", &VideoReader::getPrefetchSize,
+             "Maximum number of frames that can be buffered (read-only)")
+        
+        // -------------------
+        // Decoder Reconfiguration API
+        // -------------------
+        .def("reconfigure", &VideoReader::reconfigure,
+             py::arg("file_path"),
+             R"doc(Reconfigure the reader to use a new video file.
+
+This method reuses the existing decoder instance for a different file,
+which is significantly faster than creating a new VideoReader (10-50x speedup).
+
+After reconfiguration:
+- All video properties are updated to reflect the new file
+- Frame iterator is reset to the beginning
+- Prefetch buffer is cleared and restarted
+- Any set ranges are cleared
+
+This is especially useful for batch processing workflows where you need to
+process many video files with similar properties.
+
+Args:
+    file_path (str): Path to the new video file.
+
+Raises:
+    RuntimeError: If the new file cannot be opened or decoded.
+
+Example:
+    >>> reader = VideoReader("video1.mp4")
+    >>> # Process video1...
+    >>> reader.reconfigure("video2.mp4")  # ~10-50x faster than creating new reader
+    >>> # Process video2...
+)doc")
+        .def_property_readonly("file_path", &VideoReader::getFilePath,
+             "Path to the currently loaded video file (read-only)");
 
     // ----------- Audio Class -----------
     py::class_<VideoReader::Audio, std::shared_ptr<VideoReader::Audio>>(m, "Audio")

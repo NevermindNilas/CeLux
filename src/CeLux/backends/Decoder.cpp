@@ -1143,6 +1143,116 @@ void Decoder::setForce8Bit(bool enabled)
     }
 }
 
+void Decoder::setPrefetchSize(size_t size)
+{
+    CELUX_DEBUG("Setting prefetch buffer size to {}", size);
+    
+    // If we're changing the size while prefetching, we need to restart
+    bool wasRunning = decodingThread.joinable() && !stopDecoding;
+    if (wasRunning)
+    {
+        stopDecodingThread();
+        clearQueue();
+    }
+    
+    maxQueueSize = size > 0 ? size : 1; // Minimum of 1 for queue-based operation
+    
+    if (wasRunning && size > 0)
+    {
+        startDecodingThread();
+    }
+}
+
+size_t Decoder::getPrefetchBufferedCount() const
+{
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(queueMutex));
+    return frameQueue.size();
+}
+
+void Decoder::startPrefetch()
+{
+    CELUX_DEBUG("Explicitly starting prefetch with buffer size {}", maxQueueSize);
+    startDecodingThread();
+}
+
+void Decoder::stopPrefetch()
+{
+    CELUX_DEBUG("Stopping prefetch and clearing {} buffered frames", frameQueue.size());
+    stopDecodingThread();
+    clearQueue();
+}
+
+void Decoder::reconfigure(const std::string& filePath)
+{
+    CELUX_INFO("Reconfiguring decoder with new file: {}", filePath);
+    
+    // Stop any running prefetch thread first
+    stopDecodingThread();
+    clearQueue();
+    
+    // Close audio if it was initialized
+    closeAudio();
+    
+    // Reset codec context (but don't destroy the converter - we may reuse it)
+    if (codecCtx)
+    {
+        avcodec_flush_buffers(codecCtx.get());
+        codecCtx.reset();
+        CELUX_DEBUG("Codec context reset for reconfiguration");
+    }
+    
+    // Reset format context
+    if (formatCtx)
+    {
+        formatCtx.reset();
+        CELUX_DEBUG("Format context reset for reconfiguration");
+    }
+    
+    // Reset state
+    videoStreamIndex = -1;
+    audioStreamIndex = -1;
+    isFinished = false;
+    seekRequested = false;
+    cachedFilePath_ = "";
+    
+    // Also reset batch decoder if it was initialized
+    if (batch_decoder_)
+    {
+        batch_decoder_.reset();
+        cached_frame_count_ = -1;
+    }
+    
+    // Re-initialize with new file (reusing existing converter settings if compatible)
+    openFile(filePath);
+    findVideoStream();
+    initCodecContext();
+    setProperties();
+    
+    // Update converter if needed
+    if (converter)
+    {
+        // Let the converter reinitialize on next frame
+        converter->synchronize();
+    }
+    else
+    {
+        converter = std::make_unique<celux::conversion::cpu::AutoToRGBConverter>();
+        auto* autoConverter = dynamic_cast<celux::conversion::cpu::AutoToRGBConverter*>(converter.get());
+        if (autoConverter)
+        {
+            autoConverter->setForce8Bit(force_8bit);
+        }
+    }
+    
+    // Cache the file path
+    cachedFilePath_ = filePath;
+    
+    // Restart prefetch thread
+    startDecodingThread();
+    
+    CELUX_INFO("Decoder reconfigured successfully for: {}", filePath);
+}
+
 void Decoder::startDecodingThread()
 {
     if (decodingThread.joinable()) return;

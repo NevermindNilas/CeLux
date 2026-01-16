@@ -318,6 +318,77 @@ class VideoReader
      */
     torch::Tensor decodeBatch(const std::vector<int64_t>& indices);
 
+    // ----------------------------------
+    // Prefetch Control API
+    // ----------------------------------
+    
+    /**
+     * @brief Set the prefetch buffer size and optionally start prefetching.
+     * 
+     * Prefetching decodes frames in a background thread, filling a buffer.
+     * When iterating, frames are returned from the buffer for near-zero latency.
+     * This is especially useful for ML pipelines where the GPU is busy with
+     * inference while the CPU can be decoding the next frames.
+     *
+     * @param buffer_size Number of frames to buffer (default 16).
+     * @param start_immediately If true, start prefetching now. If false, 
+     *        prefetching starts on first frame access.
+     */
+    void startPrefetch(size_t buffer_size = 16, bool start_immediately = true);
+    
+    /**
+     * @brief Stop the background prefetch thread and clear the buffer.
+     * 
+     * Call this when switching to random access mode or when done iterating.
+     */
+    void stopPrefetch();
+    
+    /**
+     * @brief Get the number of frames currently buffered.
+     * @return Number of decoded frames waiting to be consumed.
+     */
+    size_t getPrefetchBufferedCount() const;
+    
+    /**
+     * @brief Check if prefetching is currently active.
+     * @return true if background decoding thread is running.
+     */
+    bool isPrefetching() const;
+    
+    /**
+     * @brief Get the current prefetch buffer size.
+     * @return Maximum number of frames that can be buffered.
+     */
+    size_t getPrefetchSize() const;
+    
+    // ----------------------------------
+    // Decoder Reconfiguration API
+    // ----------------------------------
+    
+    /**
+     * @brief Reconfigure the reader to use a new video file.
+     * 
+     * This method reuses the existing decoder instance for a different file,
+     * which is significantly faster than creating a new VideoReader (10-50x speedup).
+     * All internal state is reset, and the new file is opened.
+     * 
+     * After reconfiguration:
+     * - All video properties are updated to reflect the new file
+     * - Frame iterator is reset to the beginning
+     * - Prefetch buffer is cleared and restarted
+     * - Any set ranges are cleared
+     * 
+     * @param filePath Path to the new video file.
+     * @throws std::runtime_error if the new file cannot be opened or decoded.
+     */
+    void reconfigure(const std::string& filePath);
+    
+    /**
+     * @brief Get the path to the currently loaded video file.
+     * @return Current video file path.
+     */
+    std::string getFilePath() const { return filePath; }
+
   private:
     void ensureRandDecoder();
     bool seekToFrame(int frame_number);

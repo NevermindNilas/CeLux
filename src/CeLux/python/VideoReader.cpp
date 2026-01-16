@@ -990,3 +990,99 @@ torch::Tensor VideoReader::decodeBatch(const std::vector<int64_t>& indices)
 
     return batch;
 }
+
+// ----------------------------------
+// Prefetch Control API Implementation
+// ----------------------------------
+
+void VideoReader::startPrefetch(size_t buffer_size, bool start_immediately)
+{
+    CELUX_INFO("Starting prefetch with buffer size {} (immediate={})", 
+               buffer_size, start_immediately);
+    
+    if (buffer_size > 0)
+    {
+        decoder->setPrefetchSize(buffer_size);
+    }
+    
+    if (start_immediately)
+    {
+        decoder->startPrefetch();
+    }
+}
+
+void VideoReader::stopPrefetch()
+{
+    CELUX_INFO("Stopping prefetch");
+    decoder->stopPrefetch();
+}
+
+size_t VideoReader::getPrefetchBufferedCount() const
+{
+    return decoder->getPrefetchBufferedCount();
+}
+
+bool VideoReader::isPrefetching() const
+{
+    return decoder->isPrefetching();
+}
+
+size_t VideoReader::getPrefetchSize() const
+{
+    return decoder->getPrefetchSize();
+}
+
+// ----------------------------------
+// Decoder Reconfiguration API Implementation
+// ----------------------------------
+
+void VideoReader::reconfigure(const std::string& newFilePath)
+{
+    CELUX_INFO("Reconfiguring VideoReader with new file: {}", newFilePath);
+    
+    // Reconfigure the main decoder
+    decoder->reconfigure(newFilePath);
+    
+    // Reset the random-access decoder if it was created
+    if (rand_decoder)
+    {
+        rand_decoder->close();
+        rand_decoder.reset();
+    }
+    
+    // Reset Audio object with updated decoder
+    audio = std::make_shared<Audio>(decoder);
+    
+    // Update properties from the new file
+    properties = decoder->getVideoProperties();
+    
+    // Update internal file path
+    filePath = newFilePath;
+    
+    // Reset iteration state
+    currentIndex = 0;
+    current_timestamp = 0.0;
+    
+    // Clear any set ranges
+    start_frame = 0;
+    end_frame = -1;
+    start_time = -1.0;
+    end_time = -1.0;
+    
+    // Reallocate tensor if dimensions changed
+    torch::Device torchDevice = tensor.device();
+    torch::Dtype torchDataType = findTypeFromBitDepth();
+    
+    if (tensor.size(0) != properties.height || 
+        tensor.size(1) != properties.width ||
+        tensor.dtype() != torchDataType)
+    {
+        tensor = torch::empty(
+            {properties.height, properties.width, 3},
+            torch::TensorOptions().dtype(torchDataType).device(torchDevice));
+        CELUX_DEBUG("Reallocated tensor for new dimensions: {}x{}", 
+                    properties.width, properties.height);
+    }
+    
+    CELUX_INFO("VideoReader reconfigured successfully for: {}", newFilePath);
+}

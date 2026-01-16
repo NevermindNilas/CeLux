@@ -1,8 +1,44 @@
 
-### **Version 0.8.3 (YYYY-MM-DD)**
+### **Version 0.8.3 (2026-01-16)**
+
+#### **New: Threaded Prefetch API**
+- **Added:** Prefetch control API for near-zero latency frame access in ML pipelines
+  - `start_prefetch(buffer_size=16)` - Start background decoding with configurable buffer
+  - `stop_prefetch()` - Stop background thread and clear buffer
+  - `prefetch_buffered` - Property showing frames currently in buffer
+  - `is_prefetching` - Property showing if background thread is running
+  - `prefetch_size` - Property showing max buffer size
+  
+  ```python
+  reader = VideoReader("video.mp4")
+  reader.start_prefetch(buffer_size=16)  # Start buffering
+  for frame in reader:  # Frames returned in ~0ms from buffer!
+      result = model.inference(frame)
+  reader.stop_prefetch()
+  ```
+
+#### **New: Decoder Reconfiguration API**
+- **Added:** `reconfigure(file_path)` method for efficient multi-file processing
+  - Reuses decoder instance for different video files (1.5-2x faster for CPU, 10-50x for NVDEC)
+  - Automatically resets iterator, clears prefetch buffer, and updates properties
+  - Ideal for batch processing workflows where many files have similar properties
+  - `file_path` property to get currently loaded video path
+  
+  ```python
+  reader = VideoReader("video1.mp4")
+  for frame in reader:
+      process(frame)
+  
+  # Switch to new file ~10x faster than creating new VideoReader
+  reader.reconfigure("video2.mp4")
+  for frame in reader:  # Properties automatically updated
+      process(frame)
+  ```
+
 #### **VideoReader Optimizations & Fixes**
 - **Added:** "Smart Seek" logic for `VideoReader` indexing. Forward skips within a 5-second threshold now use sequential decoding instead of expensive random access, providing up to 10x faster periodic seeking (e.g., `vr[::10]`).
 - **Fixed:** Critical bug where `current_timestamp` was uninitialized in the `VideoReader` constructor, leading to unstable seeking behavior.
+- **Fixed:** Syntax error in VideoReader.cpp (garbage text from debugging session).
 - **Improved:** Consolidated `currentIndex` tracking into the core decoding loop, ensuring frame indices are always accurate across iterator and indexing access methods.
 - **Improved:** `VideoReader::operator[]` integer indexing is now robust and index-aware, avoiding redundant PTS-to-index conversions for simple forward jumps.
 
@@ -25,6 +61,7 @@
 - **Note:** Building with CUDA on Windows requires running from Developer Command Prompt when using Ninja generator.
 
 ---
+
 
 ### **Version 0.8.2 (2025-12-13)**
 

@@ -5,12 +5,12 @@ permissions:
 
 on:
   push:
-    tags:    [ 'v*.*.*' ]
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: '3.13'
-  DIST_DIR: 'dist'
+  PYTHON_VERSION: "3.13"
+  DIST_DIR: "dist"
   VCPKG_LIBRARY_LINKAGE: dynamic
 
 jobs:
@@ -20,132 +20,273 @@ jobs:
       SKBUILD_CONFIG: Release
       VCPKG_TARGET_TRIPLET: x64-windows-release
     steps:
-    - name: Purge vcpkg to force clean build (avoid old DLLs)
-      shell: cmd
-      run: |
-        if exist "%RUNNER_TEMP%\vcpkg" rmdir /s /q "%RUNNER_TEMP%\vcpkg"
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup MSVC environment
-      uses: ilammy/msvc-dev-cmd@v1
-    - name: Upgrade pip & install deps
-      run: |
-        python -m pip install --upgrade pip setuptools wheel
-        python -m pip install pybind11 numpy ninja
-        python -m pip install torch --index-url https://download.pytorch.org/whl/cu130
-    - name: Cache vcpkg build & installs
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ runner.temp }}/vcpkg
-          ${{ runner.temp }}/vcpkg/installed
-          ${{ runner.temp }}/vcpkg/archives
-        key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('vcpkg.json','vcpkg-lock.json') }}
-        restore-keys: |
-          vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
-    - name: Bootstrap vcpkg
-      shell: powershell
-      run: |
-        if (-not (Test-Path "${{ runner.temp }}/vcpkg")) {
-          git clone https://github.com/microsoft/vcpkg.git "${{ runner.temp }}/vcpkg"
-        }
-        & "${{ runner.temp }}/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
-    - name: Update vcpkg ports
-      shell: cmd
-      run: |
-        cd "${{ runner.temp }}\vcpkg"
-        git fetch origin master
-        git reset --hard origin/master
-        git clean -fd
-    - name: Set VCPKG env vars
-      shell: bash
-      run: |
-        echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg"                          >> $GITHUB_ENV
-        echo "VCPKG_TOOLCHAIN_FILE=${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
-        echo "VCPKG_TARGET_TRIPLET=x64-windows-release"                        >> $GITHUB_ENV
-        echo "CMAKE_PREFIX_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release"                       >> $GITHUB_ENV
-        echo "CMAKE_MODULE_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release/share/ffmpeg"          >> $GITHUB_ENV
-    - name: Install C++ deps via vcpkg (retry on 429)
-      shell: cmd
-      run: |
-        for /L %%i in (1,1,3) do (
-            "${{ runner.temp }}\vcpkg\vcpkg" remove ffmpeg --triplet x64-windows-release 2>nul || echo "FFmpeg not installed"
-            "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv ffmpeg[avcodec,avdevice,avfilter,avformat,core,dav1d,swresample,swscale,x264,x265] --triplet x64-windows-release --recurse && exit /b 0
-            timeout /t 30
-        )
-        exit /b 1
-    - name: Save vcpkg cache
-      if: always()
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ runner.temp }}/vcpkg
-          ${{ runner.temp }}/vcpkg/installed
-          ${{ runner.temp }}/vcpkg/archives
-        key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('vcpkg.json','vcpkg-lock.json') }}
-        restore-keys: |
-          vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
-    - name: Set PYTHON_LOCATION env
-      run: echo "PYTHON_LOCATION=${{ env.pythonLocation }}" >> $GITHUB_ENV
-      shell: bash
-    # CUDA disabled for CI builds
-    # - name: Setup CUDA toolkit
-    #   uses: Jimver/cuda-toolkit@v0.2.29
-    #   id: cuda-toolkit
-    #   with:
-    #     cuda: '12.6.3'
-    #     method: 'network'
-    #     sub-packages: '["nvcc", "cudart"]'
-    - name: Build Windows wheel
-      shell: bash
-      env:
-        CMAKE_GENERATOR: Ninja
-        SKBUILD_CONFIG: Release
-        VCPKG_ROOT:            ${{ runner.temp }}/vcpkg
-        VCPKG_TOOLCHAIN_FILE:  ${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-        VCPKG_TARGET_TRIPLET:  x64-windows-release
-        CMAKE_ARGS: >-
-          -DCMAKE_TOOLCHAIN_FILE=D:/a/_temp/vcpkg/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_TARGET_TRIPLET=x64-windows-release
-          -DCMAKE_PREFIX_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release
-          -DCMAKE_MODULE_PATH=D:/a/_temp/vcpkg/installed/x64-windows-release/share/ffmpeg
-      run: |
-        python -m pip wheel . --no-deps -w dist -v
-    - name: Smoke-test wheel in current env
-      shell: bash
-      run: |
-        python -m pip install --upgrade --force-reinstall dist/*.whl
-        python -c "import torch, celux; print(f'torch {torch.__version__}, celux {celux.__version__}')"
-    - name: List final wheel contents
-      run: unzip -l dist/*.whl | grep celux/
-    - name: List dist folder
-      shell: cmd
-      run: dir dist
-    - name: Upload Windows wheel
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-wheel-Release
-        path: '**/dist/*.whl'
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Upgrade pip & install deps
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install scikit-build-core pybind11 numpy ninja
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg
+            ${{ runner.temp }}/vcpkg/installed
+            ${{ runner.temp }}/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-dav1d-v2-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-dav1d-v2-
+
+      - name: Bootstrap vcpkg
+        shell: powershell
+        run: |
+          if (-not (Test-Path "${{ runner.temp }}/vcpkg")) {
+            git clone https://github.com/microsoft/vcpkg.git "${{ runner.temp }}/vcpkg"
+          }
+          & "${{ runner.temp }}/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+
+      - name: Update vcpkg ports
+        shell: cmd
+        run: |
+          cd "${{ runner.temp }}\vcpkg"
+          git fetch origin master
+          git reset --hard origin/master
+          git clean -fd
+
+      - name: Set VCPKG env vars
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg"                          >> $GITHUB_ENV
+          echo "VCPKG_TOOLCHAIN_FILE=${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+          echo "VCPKG_TARGET_TRIPLET=x64-windows-release"                        >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=${RUNNER_TEMP}/vcpkg/installed/x64-windows-release"                       >> $GITHUB_ENV
+
+      - name: Install C++ deps via vcpkg
+        shell: cmd
+        run: |
+          "${{ runner.temp }}\vcpkg\vcpkg" install spdlog fmt libyuv --triplet x64-windows-release --recurse
+
+      - name: Download FFmpeg for build (headers/libs only)
+        shell: powershell
+        run: |
+          # FFmpeg is needed for headers/import libs at build time
+          # The DLLs are NOT bundled - users must have FFmpeg in their PATH
+          $FFmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z"
+          $OutputDir = "${{ github.workspace }}/external/ffmpeg"
+          $TempDir = "${{ runner.temp }}/ffmpeg_download"
+
+          New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
+
+          Write-Host "Downloading FFmpeg (for build-time headers/libs only)..."
+          Start-BitsTransfer -Source $FFmpegUrl -Destination "$TempDir/ffmpeg.7z"
+
+          Write-Host "Extracting FFmpeg..."
+          7z x "$TempDir/ffmpeg.7z" -o"$TempDir/extracted" -y
+
+          $FFmpegDir = Get-ChildItem -Path "$TempDir/extracted" -Directory | Select-Object -First 1
+          # Copy all directories including bin (needed for running tests, but NOT bundled by CMake)
+          Copy-Item -Path "$($FFmpegDir.FullName)/bin" -Destination $OutputDir -Recurse -Force
+          Copy-Item -Path "$($FFmpegDir.FullName)/lib" -Destination $OutputDir -Recurse -Force
+          Copy-Item -Path "$($FFmpegDir.FullName)/include" -Destination $OutputDir -Recurse -Force
+
+          Write-Host "=== FFmpeg installed (headers/libs for build, bin for testing) ==="
+
+      - name: Setup CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.30
+        id: cuda-toolkit
+        with:
+          cuda: "13.1.0"
+          method: "local"
+          use-github-cache: true
+          use-local-cache: true
+
+      - name: Verify and Fix CUDA installation
+        shell: bash
+        run: |
+          echo "CUDA_PATH: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
+          ls -la "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/" | head -20
+          "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/bin/nvcc.exe" --version
+
+          CUDA_INC="${{ steps.cuda-toolkit.outputs.CUDA_PATH }}/include"
+          echo "Checking for host_config.h in $CUDA_INC..."
+
+          # CUDA 13.x moved host_config.h - fix by ensuring it exists in include/crt/
+          if [ -f "$CUDA_INC/crt/host_config.h" ]; then
+            echo "SUCCESS: host_config.h found at include/crt/"
+          elif [ -f "$CUDA_INC/host_config.h" ]; then
+            echo "FOUND: host_config.h at include/ (CUDA 13.x location)"
+            echo "FIXING: Copying to include/crt/host_config.h for compatibility..."
+            mkdir -p "$CUDA_INC/crt"
+            cp "$CUDA_INC/host_config.h" "$CUDA_INC/crt/host_config.h"
+            echo "FIX APPLIED."
+          else
+            echo "FATAL: host_config.h NOT found!"
+            echo "CUDA installation is incomplete. Cannot build CUDA wheel."
+            find "${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" -name "host_config.h" || true
+            exit 1
+          fi
+
+      - name: Build Windows wheel
+        shell: bash
+        env:
+          CMAKE_GENERATOR: Ninja
+          SKBUILD_CONFIG: Release
+          CELUX_ENABLE_CUDA: "ON"
+        run: |
+          # Convert backslashes to forward slashes to avoid CMake escaping issues on Windows
+          TEMP_FWD=$(echo "$RUNNER_TEMP" | tr '\\' '/')
+
+          # Sanitize CUDA_PATH path as well
+          CUDA_PATH_FWD=$(echo "$CUDA_PATH" | tr '\\' '/')
+          export CUDA_PATH="$CUDA_PATH_FWD"
+
+          export VCPKG_ROOT="${TEMP_FWD}/vcpkg"
+          export VCPKG_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          export VCPKG_TARGET_TRIPLET=x64-windows-release
+          export CMAKE_PREFIX_PATH="${VCPKG_ROOT}/installed/x64-windows-release"
+
+          # Construct CMAKE_ARGS with sanitized paths AND FORCE CELUX_ENABLE_CUDA=ON
+          export CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=${VCPKG_TOOLCHAIN_FILE} -DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET} -DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH} -DCELUX_ENABLE_CUDA=ON"
+
+          echo "CMAKE_ARGS: $CMAKE_ARGS"
+          # Use --no-build-isolation so we usage the pre-installed CUDA-enabled Torch
+          python -m pip wheel . --no-deps --no-build-isolation -w dist -v
+
+      - name: Debug - List celux folder and wheel contents
+        shell: powershell
+        run: |
+          Write-Host "=== Contents of celux/ folder (post-build) ==="
+          Get-ChildItem -Path celux -Recurse | ForEach-Object { 
+            Write-Host "$($_.Length) bytes - $($_.FullName)" 
+          }
+          Write-Host "=== Contents of dist/ folder ==="
+          Get-ChildItem -Path dist | ForEach-Object { 
+            Write-Host "$($_.Length) bytes - $($_.Name)" 
+          }
+
+      - name: Repair wheel with delvewheel (bundle DLLs)
+        shell: powershell
+        run: |
+          Write-Host "=== Installing delvewheel ==="
+          pip install delvewheel
+
+          Write-Host "=== Setting up DLL search paths ==="
+          $VcpkgBin = Join-Path $env:RUNNER_TEMP "vcpkg\installed\x64-windows-release\bin"
+          $CudaBin = Join-Path $env:CUDA_PATH "bin"
+
+          # Locating Torch DLLs (needed so delvewheel finds them, but we EXCLUDE them from bundling)
+          $TorchSite = python -c "import torch, os; print(os.path.dirname(torch.__file__))"
+          $TorchLib = Join-Path $TorchSite "lib"
+
+          # FFmpeg DLLs (for build/test, but NOT bundled)
+          $FFmpegBin = "${{ github.workspace }}/external/ffmpeg/bin"
+
+          # Dynamically get list of ALL FFmpeg DLLs to exclude them
+          $FFmpegDlls = Get-ChildItem -Path $FFmpegBin -Filter "*.dll" | Select-Object -ExpandProperty Name
+          $FFmpegExclude = $FFmpegDlls -join ";"
+
+          Write-Host "VCPKG bin: $VcpkgBin"
+          Write-Host "CUDA bin: $CudaBin"
+          Write-Host "Torch lib: $TorchLib"
+          Write-Host "FFmpeg bin: $FFmpegBin"
+          Write-Host "Excluding FFmpeg DLLs: $FFmpegExclude"
+
+          # Find the wheel file
+          $WheelFile = Get-ChildItem dist/*.whl | Select-Object -First 1
+          Write-Host "Repairing wheel: $($WheelFile.FullName)"
+
+          New-Item -ItemType Directory -Path dist_repaired -Force | Out-Null
+
+          # Run delvewheel repair
+          delvewheel repair $WheelFile.FullName `
+            --add-path "$VcpkgBin" `
+            --add-path "$CudaBin" `
+            --add-path "$TorchLib" `
+            --add-path "$FFmpegBin" `
+            --exclude "torch_cpu.dll;c10.dll;torch_python.dll;torch.dll;torch_cuda.dll;$FFmpegExclude" `
+            --wheel-dir dist_repaired `
+            -v
+
+          # Replace original wheel with repaired one
+          Remove-Item dist/*.whl -Force
+          Move-Item dist_repaired/*.whl dist/
+          Remove-Item dist_repaired -Recurse -Force
+          Write-Host "=== Wheel repair complete ==="
+
+      - name: List wheel contents
+        run: |
+          echo "=== Wheel contents (CUDA DLLs bundled via delvewheel, FFmpeg NOT bundled) ==="
+          unzip -l dist/*.whl | grep celux/
+
+      - name: Test wheel import and API
+        shell: powershell
+        run: |
+          Write-Host "=== Installing wheel and testing import ==="
+          pip install (Get-ChildItem dist/*.whl) --force-reinstall
+
+          # Add FFmpeg bin to PATH for the test
+          $FFmpegBin = Join-Path $pwd "external\ffmpeg\bin"
+          Write-Host "Adding to PATH: $FFmpegBin"
+          $env:PATH = "$FFmpegBin;$env:PATH"
+
+          # Check torch and basic import
+          python -c "import torch, celux; print(f'torch {torch.__version__}, celux {celux.__version__}')"
+
+          # Verify 0.8.3 API features are present
+          Write-Host "--- Verifying 0.8.3 API Features ---"
+          $ApiCode = @'
+          import celux
+          vr = celux.VideoReader
+
+          # Prefetch API
+          assert hasattr(vr, 'start_prefetch'), 'MISSING: start_prefetch'
+          assert hasattr(vr, 'stop_prefetch'), 'MISSING: stop_prefetch'
+          assert hasattr(vr, 'prefetch_buffered'), 'MISSING: prefetch_buffered'
+          assert hasattr(vr, 'is_prefetching'), 'MISSING: is_prefetching'
+          assert hasattr(vr, 'prefetch_size'), 'MISSING: prefetch_size'
+
+          # Reconfigure API
+          assert hasattr(vr, 'reconfigure'), 'MISSING: reconfigure'
+          assert hasattr(vr, 'file_path'), 'MISSING: file_path'
+
+          print('All 0.8.3 API features verified!')
+          '@
+          $ApiCode | Set-Content -Path "verify_api.py" -Encoding UTF8
+          python verify_api.py
+
+      - name: Upload Windows wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-wheel-Release
+          path: "dist/*.whl"
 
   #build-linux:
   #  runs-on: ubuntu-latest
   #  steps:
   #    - name: Checkout code
   #      uses: actions/checkout@v4
-#
+  #
   #    - name: Set up Python (host only, cibuildwheel uses Docker for Linux)
   #      uses: actions/setup-python@v4
   #      with:
   #        python-version: ${{ env.PYTHON_VERSION }}
-#
+  #
   #    - name: Install cibuildwheel
   #      run: python -m pip install cibuildwheel==2.20.0
-#
+  #
   #    - name: Build Linux wheel (manylinux)
   #      env:
   #        CIBW_BUILD: "cp313-manylinux*_x86_64"
@@ -163,7 +304,7 @@ jobs:
   #                      -DVCPKG_TARGET_TRIPLET=x64-linux-dynamic
   #                      -DCMAKE_PREFIX_PATH=/opt/vcpkg/installed/x64-linux-dynamic
   #                      -DCMAKE_MODULE_PATH=/opt/vcpkg/installed/x64-linux-dynamic/share/ffmpeg"
-#
+  #
   #        CIBW_BEFORE_ALL_LINUX: |
   #          (command -v dnf >/dev/null 2>&1 && dnf -y install \
   #             git pkgconf nasm zip unzip curl tar \
@@ -174,17 +315,17 @@ jobs:
   #          git clone https://github.com/microsoft/vcpkg /opt/vcpkg
   #          /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
   #          /opt/vcpkg/vcpkg install spdlog fmt ffmpeg[avcodec,avdevice,avfilter,avformat,core,swresample,swscale,x264,x265] --triplet x64-linux-dynamic --recurse
-#
+  #
   #        CIBW_BEFORE_BUILD_LINUX: |
   #          python -m pip install -U pip wheel setuptools
   #          python -m pip install --only-binary=:all: "pybind11>=2.11"
   #          python -m pip install --only-binary=:all: torch || python -m pip install --only-binary=:all: --index-url https://download.pytorch.org/whl/cpu torch
-  #        
-#
+  #
+  #
   #        CIBW_TEST_REQUIRES: "torch"
   #        CIBW_OUTPUT_DIR: dist
   #      run: python -m cibuildwheel --platform linux
-#
+  #
   #    - name: List dist folder
   #      run: ls -l dist
   #
@@ -206,11 +347,11 @@ jobs:
         with:
           name: windows-wheel-Release
           path: dist
-  #    - name: Download Linux wheels
-  #      uses: actions/download-artifact@v4
-  #      with:
-  #        name: linux-wheel-Release
-  #        path: dist
+      #    - name: Download Linux wheels
+      #      uses: actions/download-artifact@v4
+      #      with:
+      #        name: linux-wheel-Release
+      #        path: dist
       - name: List all files for debug
         run: ls -lR dist
       - name: Install tomllib (if needed)
@@ -235,11 +376,11 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag:   v${{ env.VERSION }}
-          name:  Release v${{ env.VERSION }}
-          body:  Automated CI build & wheel
-          artifacts: 'dist/*.whl'
-#
+          tag: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          body: Automated CI build & wheel
+          artifacts: "dist/*.whl"
+  #
   pypi-publish:
     needs: release
     runs-on: ubuntu-latest
@@ -248,7 +389,7 @@ jobs:
       name: pypi
       url: https://pypi.org/p/nelux
     permissions:
-      id-token: write 
+      id-token: write
     steps:
       - name: Download Windows wheels
         uses: actions/download-artifact@v4

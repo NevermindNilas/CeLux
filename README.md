@@ -38,8 +38,8 @@ vr[[-1, -2, -3]]                     # negative indexing
 
 ## 📚 Documentation
 
-- [📝 Changelog](https://github.com/Trentonom0r3/CeLux/blob/master/docs/CHANGELOG.md)
-- [🍎 Audio & Muxing Guide](https://github.com/Trentonom0r3/CeLux/blob/master/docs/FAQ.md#audio)
+- [📖 **Full Usage Guide**](https://github.com/NevermindNilas/CeLux/blob/master/docs/usage.md) – Complete API reference with examples
+- [📝 Changelog](https://github.com/NevermindNilas/CeLux/blob/master/docs/CHANGELOG.md)
 - [📊 Benchmarks](https://github.com/NevermindNilas/python-decoders-benchmarks/blob/main/1280x720_diagram.png)
 
 

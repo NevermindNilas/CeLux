@@ -1,4 +1,17 @@
 
+### **Version 0.8.4 (2026-01-17)**
+
+#### **Color Conversion Accuracy Fix (NVDEC)**
+- **Fixed:** Critical bug in CUDA YUV to RGB conversion where limited range chroma (16-240) was incorrectly scaled.
+- **Added:** Pre-computed, ITU-R validated color conversion matrices for all major standards:
+  - BT.709 (HD) - Limited and Full range
+  - BT.601 (SD) - Limited and Full range
+  - BT.2020 (UHD/HDR) - Limited and Full range
+  - SMPTE 240M and FCC
+- **Improved:** Added 8-bit normalization for 10-bit and 16-bit content before matrix multiplication, ensuring consistent color accuracy across all bit depths.
+- **Improved:** Added rounding (+0.5f) before clamping in CUDA kernels to reduce quantization artifacts.
+- **Note:** Native NVDEC conversion is now mathematically aligned with `libyuv` and `FFmpeg` high-quality conversion paths.
+
 ### **Version 0.8.3 (2026-01-16)**
 
 #### **New: Threaded Prefetch API**

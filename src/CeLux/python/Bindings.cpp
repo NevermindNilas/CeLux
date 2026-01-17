@@ -29,7 +29,7 @@ Backend backendFromString(const std::string& backend_str)
 PYBIND11_MODULE(_celux, m)
 {
     m.doc() = "celux – lightspeed video decoding into tensors";
-    m.attr("__version__") = "0.8.3";
+    m.attr("__version__") = "0.8.4";
 
     // Expose CUDA build status
 #ifdef CELUX_ENABLE_CUDA

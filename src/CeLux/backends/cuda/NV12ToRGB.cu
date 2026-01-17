@@ -143,35 +143,113 @@ inline void GetColorSpaceConstants(int iMatrix, int colorRange, float &wr, float
 }
 
 //------------------------------------------------------------------------------
+// Pre-computed YUV to RGB conversion matrices
+// These constants match libyuv's validated implementations for color accuracy.
+// Each matrix converts (Y-offset, U-128, V-128) directly to RGB (0-255).
+//
+// For limited range: Y is in [16,235], UV is in [16,240]
+// For full range: Y is in [0,255], UV is in [0,255]
+//
+// Matrix format: mat[row][col] where row is R/G/B and col is Y/U/V coefficient
+//------------------------------------------------------------------------------
+
+// BT.601 (SD content) - Limited Range
+// Y: 16-235 (219 levels), UV: 16-240 (224 levels, centered at 128)
+static const float kMatBT601Limited[3][3] = {
+    {1.164384f,  0.000000f,  1.596027f},   // R = 1.164*(Y-16) + 1.596*(V-128)
+    {1.164384f, -0.391762f, -0.812968f},   // G = 1.164*(Y-16) - 0.392*(U-128) - 0.813*(V-128)
+    {1.164384f,  2.017232f,  0.000000f}    // B = 1.164*(Y-16) + 2.017*(U-128)
+};
+
+// BT.601 (SD content) - Full Range
+static const float kMatBT601Full[3][3] = {
+    {1.000000f,  0.000000f,  1.402000f},   // R = Y + 1.402*(V-128)
+    {1.000000f, -0.344136f, -0.714136f},   // G = Y - 0.344*(U-128) - 0.714*(V-128)
+    {1.000000f,  1.772000f,  0.000000f}    // B = Y + 1.772*(U-128)
+};
+
+// BT.709 (HD content) - Limited Range
+// Most common for modern HD video
+static const float kMatBT709Limited[3][3] = {
+    {1.164384f,  0.000000f,  1.792741f},   // R = 1.164*(Y-16) + 1.793*(V-128)
+    {1.164384f, -0.213249f, -0.532909f},   // G = 1.164*(Y-16) - 0.213*(U-128) - 0.533*(V-128)
+    {1.164384f,  2.112402f,  0.000000f}    // B = 1.164*(Y-16) + 2.112*(U-128)
+};
+
+// BT.709 (HD content) - Full Range
+static const float kMatBT709Full[3][3] = {
+    {1.000000f,  0.000000f,  1.574800f},   // R = Y + 1.575*(V-128)
+    {1.000000f, -0.187324f, -0.468124f},   // G = Y - 0.187*(U-128) - 0.468*(V-128)
+    {1.000000f,  1.855600f,  0.000000f}    // B = Y + 1.856*(U-128)
+};
+
+// BT.2020 (UHD/HDR content) - Limited Range
+static const float kMatBT2020Limited[3][3] = {
+    {1.164384f,  0.000000f,  1.678674f},   // R
+    {1.164384f, -0.187326f, -0.650424f},   // G
+    {1.164384f,  2.141772f,  0.000000f}    // B
+};
+
+// BT.2020 (UHD/HDR content) - Full Range
+static const float kMatBT2020Full[3][3] = {
+    {1.000000f,  0.000000f,  1.474600f},   // R
+    {1.000000f, -0.164553f, -0.571353f},   // G
+    {1.000000f,  1.881400f,  0.000000f}    // B
+};
+
+// SMPTE 240M (Early HDTV) - Limited Range
+static const float kMatSMPTE240MLimit[3][3] = {
+    {1.164384f,  0.000000f,  1.794107f},   // R
+    {1.164384f, -0.257985f, -0.542583f},   // G
+    {1.164384f,  2.078705f,  0.000000f}    // B
+};
+
+// FCC (Legacy NTSC) - Limited Range
+static const float kMatFCCLimited[3][3] = {
+    {1.164384f,  0.000000f,  1.639589f},   // R
+    {1.164384f, -0.338572f, -0.743210f},   // G
+    {1.164384f,  2.032397f,  0.000000f}    // B
+};
+
+//------------------------------------------------------------------------------
 // Set the YUV to RGB conversion matrix in constant memory
+// Uses pre-computed, validated matrices for color accuracy
 //------------------------------------------------------------------------------
 void SetMatYuv2Rgb(int iMatrix, int colorRange, cudaStream_t stream) {
-    float wr, wb;
-    int black, white, max, uvMax;
-    GetColorSpaceConstants(iMatrix, colorRange, wr, wb, black, white, max, uvMax);
+    const float (*mat)[3] = nullptr;
     
-    // Compute conversion matrix coefficients
-    // Based on the standard YUV to RGB equations:
-    // R = Y + (1-wr)/0.5 * V
-    // G = Y - wb*(1-wb)/(0.5*(1-wb-wr)) * U - wr*(1-wr)/(0.5*(1-wb-wr)) * V
-    // B = Y + (1-wb)/0.5 * U
-    float mat[3][3] = {
-        {1.0f, 0.0f, (1.0f - wr) / 0.5f},
-        {1.0f, -wb * (1.0f - wb) / 0.5f / (1 - wb - wr), -wr * (1 - wr) / 0.5f / (1 - wb - wr)},
-        {1.0f, (1.0f - wb) / 0.5f, 0.0f},
-    };
+    // Select the appropriate pre-computed matrix based on color space and range
+    bool isFullRange = (colorRange == ColorRange_Full);
     
-    // Scale for range conversion
-    float yScale = static_cast<float>(max) / static_cast<float>(white - black);
-    float uvScale = static_cast<float>(max) / static_cast<float>(uvMax - black);
-    
-    for (int i = 0; i < 3; i++) {
-        mat[i][0] *= yScale;      // Y coefficient
-        mat[i][1] *= uvScale;     // U coefficient
-        mat[i][2] *= uvScale;     // V coefficient
+    switch (iMatrix) {
+        case ColorSpaceStandard_BT709:
+        case ColorSpaceStandard_Unspecified:  // Default to BT.709 for HD
+        default:
+            mat = isFullRange ? kMatBT709Full : kMatBT709Limited;
+            break;
+            
+        case ColorSpaceStandard_BT601:
+        case ColorSpaceStandard_BT470BG:
+            mat = isFullRange ? kMatBT601Full : kMatBT601Limited;
+            break;
+            
+        case ColorSpaceStandard_BT2020:
+        case ColorSpaceStandard_BT2020C:
+            mat = isFullRange ? kMatBT2020Full : kMatBT2020Limited;
+            break;
+            
+        case ColorSpaceStandard_SMPTE240M:
+            // SMPTE 240M only has limited range in practice
+            mat = kMatSMPTE240MLimit;
+            break;
+            
+        case ColorSpaceStandard_FCC:
+            // FCC only has limited range
+            mat = kMatFCCLimited;
+            break;
     }
     
-    cudaMemcpyToSymbolAsync(matYuv2Rgb, mat, sizeof(mat), 0, cudaMemcpyHostToDevice, stream);
+    cudaMemcpyToSymbolAsync(matYuv2Rgb, mat, sizeof(float) * 9, 0, cudaMemcpyHostToDevice, stream);
 }
 
 // Overload for backwards compatibility (defaults to limited range)
@@ -190,6 +268,16 @@ __device__ __forceinline__ T Clamp(T x, T lower, T upper) {
 /**
  * @brief Convert a single YUV pixel to RGB using the constant memory matrix
  * 
+ * The pre-computed matrices already include:
+ * - Y scale factor (1.164 for limited range, 1.0 for full range)
+ * - UV scale factors for proper chroma expansion
+ * 
+ * This kernel handles:
+ * - Subtracting Y offset (16 for limited range, 0 for full range)
+ * - Subtracting UV offset (128 for 8-bit, scaled for higher bit depths)
+ * - Applying the matrix multiplication
+ * - Clamping to valid RGB range with rounding
+ * 
  * @tparam YuvUnit Type of YUV component (uint8_t for 8-bit, uint16_t for 10/16-bit)
  * @param y Y component
  * @param u U component  
@@ -199,33 +287,36 @@ __device__ __forceinline__ T Clamp(T x, T lower, T upper) {
  */
 template<class YuvUnit>
 __device__ __forceinline__ RGB24 YuvToRgbForPixel(YuvUnit y, YuvUnit u, YuvUnit v, bool fullRange = false) {
-    // Calculate offsets based on bit depth
     const int bitDepth = sizeof(YuvUnit) * 8;
-    const int low = fullRange ? 0 : (1 << (bitDepth - 4));   // Y offset: 0 or 16 for 8-bit
-    const int mid = 1 << (bitDepth - 1);                      // UV offset: 128 for 8-bit
-    const float maxf = static_cast<float>((1 << bitDepth) - 1);
     
-    float fy = static_cast<float>(static_cast<int>(y) - low);
-    float fu = static_cast<float>(static_cast<int>(u) - mid);
-    float fv = static_cast<float>(static_cast<int>(v) - mid);
+    // For 8-bit: low=16 (limited) or 0 (full), mid=128
+    // For 10-bit: low=64 (limited) or 0 (full), mid=512
+    // For 16-bit: low=4096 (limited) or 0 (full), mid=32768
+    const int low = fullRange ? 0 : (1 << (bitDepth - 4));   // Y offset
+    const int mid = 1 << (bitDepth - 1);                      // UV offset (128 for 8-bit)
+    
+    // Normalize to 8-bit equivalent values before matrix multiplication
+    // This ensures our 8-bit calibrated matrices work for all bit depths
+    float normScale = (bitDepth > 8) ? (255.0f / static_cast<float>((1 << bitDepth) - 1)) : 1.0f;
+    float lowNorm = static_cast<float>(low) * normScale;
+    float midNorm = static_cast<float>(mid) * normScale;
+    
+    // Convert to normalized values (0-255 equivalent scale)
+    float fy = static_cast<float>(y) * normScale - lowNorm;
+    float fu = static_cast<float>(u) * normScale - midNorm;
+    float fv = static_cast<float>(v) * normScale - midNorm;
     
     // Apply YUV to RGB matrix multiplication
+    // The matrix coefficients are calibrated for 8-bit equivalent inputs
     float rf = matYuv2Rgb[0][0] * fy + matYuv2Rgb[0][1] * fu + matYuv2Rgb[0][2] * fv;
     float gf = matYuv2Rgb[1][0] * fy + matYuv2Rgb[1][1] * fu + matYuv2Rgb[1][2] * fv;
     float bf = matYuv2Rgb[2][0] * fy + matYuv2Rgb[2][1] * fu + matYuv2Rgb[2][2] * fv;
     
-    // For high bit depth, scale down to 8-bit
-    if (bitDepth > 8) {
-        const float scale = 255.0f / maxf;
-        rf *= scale;
-        gf *= scale;
-        bf *= scale;
-    }
-    
+    // Round and clamp to [0, 255]
     RGB24 rgb;
-    rgb.c.r = static_cast<uint8_t>(Clamp(rf, 0.0f, 255.0f));
-    rgb.c.g = static_cast<uint8_t>(Clamp(gf, 0.0f, 255.0f));
-    rgb.c.b = static_cast<uint8_t>(Clamp(bf, 0.0f, 255.0f));
+    rgb.c.r = static_cast<uint8_t>(Clamp(rf + 0.5f, 0.0f, 255.0f));
+    rgb.c.g = static_cast<uint8_t>(Clamp(gf + 0.5f, 0.0f, 255.0f));
+    rgb.c.b = static_cast<uint8_t>(Clamp(bf + 0.5f, 0.0f, 255.0f));
     return rgb;
 }
 

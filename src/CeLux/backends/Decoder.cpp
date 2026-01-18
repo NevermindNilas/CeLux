@@ -340,15 +340,14 @@ void Decoder::initCodecContext()
             }
         }
         
-        // Last resort: return the first format even if it's hardware
-        // This allows FFmpeg to potentially handle it
+        // Last resort: if no software format is available, fail to avoid
+        // returning a hardware-only format (which can crash CPU decode).
         if (*pix_fmts != AV_PIX_FMT_NONE) {
-            CELUX_WARN("No software pixel format available, using first available: {}", 
-                      av_get_pix_fmt_name(*pix_fmts));
-            return *pix_fmts;
+            CELUX_ERROR("No software pixel format available (first is {}).",
+                        av_get_pix_fmt_name(*pix_fmts));
+        } else {
+            CELUX_ERROR("No suitable pixel format found!");
         }
-        
-        CELUX_ERROR("No suitable pixel format found!");
         return AV_PIX_FMT_NONE;
     };
     

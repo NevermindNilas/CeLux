@@ -253,7 +253,57 @@ torch::Tensor VideoReader::decodeFrame()
     py::gil_scoped_release release; // Release GIL before calling decoder
 
     double frame_timestamp = 0.0;
-    bool success = decoder->decodeNextFrame(tensor.data_ptr(), &frame_timestamp);
+    bool success = false;
+    try
+    {
+        success = decoder->decodeNextFrame(tensor.data_ptr(), &frame_timestamp);
+    }
+    catch (const std::exception& ex)
+    {
+        // If NVDEC fails mid-iteration (e.g., unsupported codec), fall back to CPU.
+        if (decodeAccelerator == celux::DecodeAccelerator::NVDEC)
+        {
+            CELUX_WARN("decodeFrame(): NVDEC failed: {}. Falling back to CPU decoder.",
+                       ex.what());
+
+            decodeAccelerator = celux::DecodeAccelerator::CPU;
+            decoder = celux::Factory::createDecoder(torch::Device(torch::kCPU), filePath,
+                                                    numThreads, decodeAccelerator, 0);
+            decoder->setForce8Bit(force_8bit);
+
+            // Recreate output tensor on CPU with correct dtype
+            torch::Dtype torchDataType = findTypeFromBitDepth();
+            tensor = torch::empty(
+                {properties.height, properties.width, 3},
+                torch::TensorOptions().dtype(torchDataType).device(torch::kCPU));
+
+            // Seek back to the last known timestamp and decode forward
+            if (current_timestamp > 0.0)
+            {
+                decoder->seekToNearestKeyframe(current_timestamp);
+            }
+
+            double ts = 0.0;
+            const double half = 0.5 * ((properties.fps > 0) ? 1.0 / properties.fps : 0.0);
+            while (true)
+            {
+                success = decoder->decodeNextFrame(tensor.data_ptr(), &ts);
+                if (!success)
+                {
+                    break;
+                }
+                if (ts + 1e-9 >= current_timestamp - half)
+                {
+                    frame_timestamp = ts;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            throw;
+        }
+    }
     if (!success)
     {
         CELUX_WARN("Decoding failed or no more frames available");

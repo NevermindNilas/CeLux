@@ -309,8 +309,8 @@ AVPixelFormat Decoder::getHwFormat(AVCodecContext* ctx, const AVPixelFormat* pix
         }
     }
     
-    CELUX_WARN("CUDA DECODER: CUDA pixel format not available, falling back");
-    return pix_fmts[0];
+    CELUX_ERROR("CUDA DECODER: CUDA pixel format not available");
+    return AV_PIX_FMT_NONE;
 }
 
 void Decoder::initCodecContextWithHwAccel()
@@ -358,6 +358,14 @@ void Decoder::initCodecContextWithHwAccel()
             // No hardware decoder available, will use software with hwaccel
             break;
     }
+
+    // If no NVDEC hardware decoder exists for this codec, fail fast so the
+    // caller can fall back to CPU decoding instead of crashing later.
+    if (!hw_decoder_name)
+    {
+        throw CxException(std::string("NVDEC does not support codec: ") +
+                          avcodec_get_name(codec_id));
+    }
     
     // Try hardware decoder first
     if (hw_decoder_name)
@@ -369,15 +377,11 @@ void Decoder::initCodecContextWithHwAccel()
         }
     }
     
-    // Fall back to software decoder with hwaccel if no hw decoder found
+    // If the hardware decoder wasn't found, fail fast so the caller can fall back.
     if (!codec)
     {
-        codec = avcodec_find_decoder(codec_id);
-        if (!codec)
-        {
-            throw CxException("No decoder found for codec");
-        }
-        CELUX_INFO("CUDA DECODER: Using software decoder with hwaccel: {}", codec->name);
+        throw CxException(std::string("NVDEC hardware decoder not found for codec: ") +
+                          avcodec_get_name(codec_id));
     }
     
     // Allocate codec context
@@ -596,9 +600,9 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
     }
     else
     {
-        // Fallback to CPU conversion if frame is not on GPU
-        CELUX_WARN("CUDA DECODER: Received non-CUDA frame, using CPU converter");
-        converter->convert(frame, buffer);
+        // Do not attempt CPU conversion into a CUDA buffer.
+        // Surface an error so the caller can fall back to a CPU decoder safely.
+        throw CxException("CUDA DECODER: Received non-CUDA frame. NVDEC not available for this stream.");
     }
     
     // Synchronize the stream to ensure conversion is complete

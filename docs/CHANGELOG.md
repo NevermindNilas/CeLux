@@ -1,4 +1,9 @@
 
+### **Version 0.8.5 (2026-01-21)**
+
+#### **Compatibility**
+- **Added:** Support for PyTorch 2.10.0.
+
 ### **Version 0.8.4 (2026-01-17)**
 
 #### **Color Conversion Accuracy Fix (NVDEC)**

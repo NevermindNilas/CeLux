@@ -548,7 +548,7 @@ celux.set_log_level(LogLevel.off)    # Silence all output
 ```python
 import celux
 
-celux.__version__       # str: Library version (e.g., "0.8.4")
+celux.__version__       # str: Library version (e.g., "0.8.5")
 celux.__cuda_support__  # bool: True if CUDA/NVDEC support is compiled in
 ```
 

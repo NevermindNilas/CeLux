@@ -3,12 +3,15 @@ name: Build Wheels Only
 on:
   workflow_dispatch:
 env:
-  PYTHON_VERSION: "3.13"
   VCPKG_LIBRARY_LINKAGE: dynamic
 
 jobs:
   build-windows:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
     env:
       SKBUILD_CONFIG: Release
       VCPKG_TARGET_TRIPLET: x64-windows-release
@@ -19,7 +22,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
 
       - name: Setup MSVC environment
@@ -273,5 +276,5 @@ jobs:
       - name: Upload Windows wheel
         uses: actions/upload-artifact@v4
         with:
-          name: windows-wheel
+          name: windows-wheel-py${{ matrix.python-version }}
           path: "dist/*.whl"

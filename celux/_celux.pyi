@@ -276,3 +276,24 @@ class VideoEncoder:
         Close encoder on exit from context.
         """
         ...
+
+    @property
+    def is_hardware_encoder(self) -> bool:
+        """True if using hardware-accelerated encoding (NVENC)."""
+        ...
+
+def get_available_encoders() -> List[dict]:
+    """
+    Get a list of available video encoders with their properties.
+    Returns:
+        List[dict]: List of encoders, e.g. [{'name': 'libx264', 'long_name': '...', 'is_hardware': False}]
+    """
+    ...
+
+def get_nvenc_encoders() -> List[dict]:
+    """
+    Get a list of available NVENC hardware encoders.
+    Returns:
+        List[dict]: List of NVENC encoders, e.g. [{'name': 'h264_nvenc', ...}]
+    """
+    ...

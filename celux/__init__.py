@@ -21,6 +21,8 @@ from ._celux import (
     Audio,
     set_log_level,
     LogLevel,
+    get_available_encoders,
+    get_nvenc_encoders,
 )
 from .batch import BatchMixin
 
@@ -29,10 +31,11 @@ from .batch import BatchMixin
 class VideoReader(BatchMixin, _VideoReaderBase):
     """
     VideoReader with batch frame reading support.
-    
+
     Inherits from BatchMixin to provide efficient batch decoding capabilities
     while maintaining all original VideoReader functionality.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Store decoder reference for batch operations
@@ -47,4 +50,6 @@ __all__ = [
     "Audio",
     "set_log_level",
     "LogLevel",
+    "get_available_encoders",
+    "get_nvenc_encoders",
 ]

@@ -187,7 +187,16 @@ void Encoder::initVideoStream()
     videoCodecCtx->framerate = {properties.fps, 1};
     videoCodecCtx->gop_size = properties.gopSize;
     videoCodecCtx->max_b_frames = properties.maxBFrames;
-    videoCodecCtx->pix_fmt = properties.pixelFormat;
+    // When using hardware frames (NVENC), pix_fmt must be the hardware format (CUDA)
+    // The sw_format (NV12) is defined in the hw_frames_ctx
+    if (videoCodecCtx->hw_frames_ctx)
+    {
+        videoCodecCtx->pix_fmt = AV_PIX_FMT_CUDA;
+    }
+    else
+    {
+        videoCodecCtx->pix_fmt = properties.pixelFormat;
+    }
     
     // NVENC-specific options
     AVDictionary* opts = nullptr;

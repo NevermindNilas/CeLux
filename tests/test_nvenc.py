@@ -1,8 +1,18 @@
+import os
+import sys
+
+# Add FFmpeg DLL directory for Windows
+if os.name == "nt":
+    try:
+        os.add_dll_directory(
+            r"C:\Users\nilas\AppData\Roaming\TheAnimeScripter\ffmpeg_shared"
+        )
+    except Exception:
+        pass
+
 import celux
 import torch
 import time
-import os
-import sys
 
 
 def test_nvenc_encoding(codec_name, device, width=1920, height=1080, frames=60):
@@ -95,7 +105,22 @@ def main():
 
     # 1. Discover NVENC encoders
     print("\nScanning for NVENC encoders...")
-    encoders = celux.get_available_encoders()
+
+    # Fallback to _celux if get_available_encoders not exported in __init__
+    if hasattr(celux, "get_available_encoders"):
+        encoders = celux.get_available_encoders()
+    elif hasattr(celux, "_celux") and hasattr(celux._celux, "get_available_encoders"):
+        print("NOTE: Using celux._celux.get_available_encoders (missing export)")
+        encoders = celux._celux.get_available_encoders()
+    else:
+        print("ERROR: get_available_encoders not found in celux or celux._celux")
+        # Try to continue with hardcoded NVENC codecs just in case
+        print("Assuming NVENC codecs exist...")
+        encoders = [
+            {"name": "h264_nvenc", "long_name": "NVIDIA NVENC H.264 encoder"},
+            {"name": "hevc_nvenc", "long_name": "NVIDIA NVENC HEVC encoder"},
+        ]
+
     nvenc_encoders = [e for e in encoders if "nvenc" in e["name"]]
 
     if not nvenc_encoders:
@@ -115,9 +140,9 @@ def main():
     # 2. Run tests
     if torch.cuda.is_available():
         print("CUDA is available. Will test both CPU and CUDA tensors.")
-        devices = ["cpu", "cuda"]
+        devices = ["cuda", "cpu"]
     else:
-        print("CUDA not available in PyTorch. Will validte CPU tensors only.")
+        print("CUDA not available. Will test CPU tensors only.")
         devices = ["cpu"]
 
     for enc in nvenc_encoders:

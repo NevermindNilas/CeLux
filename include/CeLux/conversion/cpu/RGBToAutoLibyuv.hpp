@@ -10,6 +10,7 @@ extern "C"
 #include "CeLux/conversion/cpu/CPUConverter.hpp"
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 namespace celux
 {
@@ -194,38 +195,68 @@ class RGBToAutoLibyuvConverter : public ConverterBase
 
     /**
      * @brief Convert RGB24 to I422 (YUV422P) using libyuv.
+     * 
+     * libyuv doesn't have RGB24ToI422, so we convert RGB24→ARGB→I422.
      */
     bool convertToI422(const uint8_t* rgb, int rgbStride,
                        uint8_t* dstY, int dstStrideY,
                        uint8_t* dstU, int dstStrideU,
                        uint8_t* dstV, int dstStrideV)
     {
-        int result = libyuv::RGB24ToI422(
+        // Allocate ARGB intermediate buffer
+        int argbStride = width * 4;
+        std::vector<uint8_t> argb(argbStride * height);
+        
+        // RGB24 -> ARGB (libyuv expects BGRA order, so use RGB24ToARGB)
+        int ret = libyuv::RGB24ToARGB(
             rgb, rgbStride,
+            argb.data(), argbStride,
+            width, height);
+        
+        if (ret != 0) return false;
+        
+        // ARGB -> I422
+        ret = libyuv::ARGBToI422(
+            argb.data(), argbStride,
             dstY, dstStrideY,
             dstU, dstStrideU,
             dstV, dstStrideV,
             width, height);
 
-        return result == 0;
+        return ret == 0;
     }
 
     /**
      * @brief Convert RGB24 to I444 (YUV444P) using libyuv.
+     * 
+     * libyuv doesn't have RGB24ToI444, so we convert RGB24→ARGB→I444.
      */
     bool convertToI444(const uint8_t* rgb, int rgbStride,
                        uint8_t* dstY, int dstStrideY,
                        uint8_t* dstU, int dstStrideU,
                        uint8_t* dstV, int dstStrideV)
     {
-        int result = libyuv::RGB24ToI444(
+        // Allocate ARGB intermediate buffer
+        int argbStride = width * 4;
+        std::vector<uint8_t> argb(argbStride * height);
+        
+        // RGB24 -> ARGB
+        int ret = libyuv::RGB24ToARGB(
             rgb, rgbStride,
+            argb.data(), argbStride,
+            width, height);
+        
+        if (ret != 0) return false;
+        
+        // ARGB -> I444
+        ret = libyuv::ARGBToI444(
+            argb.data(), argbStride,
             dstY, dstStrideY,
             dstU, dstStrideU,
             dstV, dstStrideV,
             width, height);
 
-        return result == 0;
+        return ret == 0;
     }
 };
 

@@ -1,17 +1,17 @@
-
 import celux
 import torch
 import time
 import os
 import sys
 
+
 def test_nvenc_encoding(codec_name, device, width=1920, height=1080, frames=60):
     output_file = f"test_{codec_name}_{device}.mp4"
     if os.path.exists(output_file):
         os.remove(output_file)
-        
+
     print(f"\n--- Testing {codec_name} on {device} ---")
-    
+
     try:
         # Initialize encoder
         encoder = celux.VideoEncoder(
@@ -22,78 +22,88 @@ def test_nvenc_encoding(codec_name, device, width=1920, height=1080, frames=60):
             bit_rate=8000000,
             fps=30.0,
             preset=4,  # Balanced preset
-            cq=20      # High quality
+            cq=20,  # High quality
         )
-        
+
         # Check hardware status
         is_hardware = encoder.is_hardware_encoder()
         print(f"Encoder initialized. Hardware acceleration: {is_hardware}")
         if "nvenc" in codec_name and not is_hardware:
             print("WARNING: NVENC codec requested but hardware encoder not active!")
-            
+
         # Create dummy frames
         print(f"Generating {frames} dummy frames on {device}...")
         # Create a moving pattern to test encoding
         t_start = time.time()
-        
+
         for i in range(frames):
             # Create a simple moving gradient pattern
             # Using torch for efficient generation
             if device == "cuda":
                 # Create on GPU directly
-                frame = torch.zeros((height, width, 3), dtype=torch.uint8, device="cuda")
+                frame = torch.zeros(
+                    (height, width, 3), dtype=torch.uint8, device="cuda"
+                )
                 # Add some moving blocks
                 x = (i * 10) % width
                 y = (i * 10) % height
-                frame[y:y+100, x:x+100, 0] = 255  # R
-                frame[y:y+100, x:x+100, 1] = (i * 4) % 255  # G
-                frame[:, :, 2] = (x % 255) # B gradient
+                frame[y : y + 100, x : x + 100, 0] = 255  # R
+                frame[y : y + 100, x : x + 100, 1] = (i * 4) % 255  # G
+                frame[:, :, 2] = x % 255  # B gradient
             else:
                 # CPU tensor
                 frame = torch.zeros((height, width, 3), dtype=torch.uint8)
                 x = (i * 10) % width
                 y = (i * 10) % height
-                frame[y:y+100, x:x+100, 0] = 255
-                frame[y:y+100, x:x+100, 1] = (i * 4) % 255
-                frame[:, :, 2] = (x % 255)
+                frame[y : y + 100, x : x + 100, 0] = 255
+                frame[y : y + 100, x : x + 100, 1] = (i * 4) % 255
+                frame[:, :, 2] = x % 255
 
             # Encode
             encoder.encode_frame(frame)
-            
-            if (i+1) % 20 == 0:
-                sys.stdout.write(f".")
+
+            if (i + 1) % 20 == 0:
+                sys.stdout.write(".")
                 sys.stdout.flush()
-                
+
         encoder.close()
         t_end = time.time()
-        
+
         # Verification
         if os.path.exists(output_file):
             size = os.path.getsize(output_file)
-            print(f"\nSuccess! Output file created: {output_file} ({size / 1024 / 1024:.2f} MB)")
-            print(f"Time taken: {t_end - t_start:.2f}s ({frames / (t_end - t_start):.1f} fps)")
+            print(
+                f"\nSuccess! Output file created: {output_file} ({size / 1024 / 1024:.2f} MB)"
+            )
+            print(
+                f"Time taken: {t_end - t_start:.2f}s ({frames / (t_end - t_start):.1f} fps)"
+            )
         else:
             print(f"\nFAILED: Output file not found: {output_file}")
-            
+
     except Exception as e:
         print(f"\nERROR: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 def main():
     print(f"CeLux Version: {celux.__version__}")
     if hasattr(celux, "__cuda_support__"):
         print(f"CUDA Support: {celux.__cuda_support__}")
-    
+
     # 1. Discover NVENC encoders
     print("\nScanning for NVENC encoders...")
     encoders = celux.get_available_encoders()
-    nvenc_encoders = [e for e in encoders if "nvenc" in e['name']]
-    
+    nvenc_encoders = [e for e in encoders if "nvenc" in e["name"]]
+
     if not nvenc_encoders:
-        print("No NVENC encoders found! Ensure NVIDIA driver is installed and FFmpeg has nvenc enabled.")
+        print(
+            "No NVENC encoders found! Ensure NVIDIA driver is installed and FFmpeg has nvenc enabled."
+        )
         # Fallback to check if generic h264 exists for comparison
-        h264 = [e for e in encoders if e['name'] == 'libx264']
+        h264 = [e for e in encoders if e["name"] == "libx264"]
         if h264:
             print("Found libx264, will test that for cleanup check.")
             nvenc_encoders = h264
@@ -109,13 +119,14 @@ def main():
     else:
         print("CUDA not available in PyTorch. Will validte CPU tensors only.")
         devices = ["cpu"]
-        
+
     for enc in nvenc_encoders:
-        name = enc['name']
+        name = enc["name"]
         print(f"\n=== Testing Encoder: {name} ===")
-        
+
         for dev in devices:
             test_nvenc_encoding(name, dev)
+
 
 if __name__ == "__main__":
     main()

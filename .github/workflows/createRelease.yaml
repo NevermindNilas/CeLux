@@ -112,7 +112,8 @@ jobs:
         id: cuda-toolkit
         with:
           cuda: "13.1.0"
-          method: "local"
+          method: "network"
+          sub-packages: '["nvcc", "cudart", "cudart_dev", "nvrtc", "nvrtc_dev", "thrust", "crt", "visual_studio_integration"]'
           use-github-cache: true
           use-local-cache: true
 

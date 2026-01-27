@@ -299,7 +299,10 @@ Example:
                       std::optional<int>,         // audio_bit_rate
                       std::optional<int>,         // audio_sample_rate
                       std::optional<int>,         // audio_channels
-                      std::optional<std::string>  // audio_codec
+                      std::optional<std::string>, // audio_codec
+                      std::optional<int>,         // preset (NVENC)
+                      std::optional<int>,         // cq (NVENC)
+                      std::optional<std::string>  // pixel_format
                       >(),
              py::arg("output_path"), py::arg("codec") = py::none(),
              py::arg("width") = py::none(), py::arg("height") = py::none(),
@@ -308,13 +311,35 @@ Example:
              py::arg("audio_sample_rate") = py::none(),
              py::arg("audio_channels") = py::none(),
              py::arg("audio_codec") = py::none(),
-             "Create a celux::VideoEncoder; pass None for defaults.")
+             py::arg("preset") = py::none(),
+             py::arg("cq") = py::none(),
+             py::arg("pixel_format") = py::none(),
+             R"doc(Create a video encoder.
+
+Args:
+    output_path (str): Path to the output video file.
+    codec (str, optional): Video codec name. Defaults to "h264_mf".
+        NVENC codecs: "h264_nvenc", "hevc_nvenc", "av1_nvenc"
+    width (int, optional): Frame width. Defaults to 1920.
+    height (int, optional): Frame height. Defaults to 1080.
+    bit_rate (int, optional): Video bitrate in bps. Defaults to 4000000 (4 Mbps).
+    fps (float, optional): Frames per second. Defaults to 30.
+    audio_bit_rate (int, optional): Audio bitrate in bps.
+    audio_sample_rate (int, optional): Audio sample rate in Hz.
+    audio_channels (int, optional): Number of audio channels.
+    audio_codec (str, optional): Audio codec name.
+    preset (int, optional): NVENC encoding preset (1-7). Higher = better quality.
+    cq (int, optional): NVENC constant quality mode (0-51). Lower = better quality.
+    pixel_format (str, optional): Output pixel format (e.g., "yuv420p", "nv12").
+)doc")
         .def("encode_frame", &celux::VideoEncoder::encodeFrame, py::arg("frame"),
              "Encode one video frame (H×W×3 torch.uint8 tensor).")
         .def("encode_audio_frame", &celux::VideoEncoder::encodeAudioFrame,
              py::arg("audio"), "Encode one audio buffer (1-D torch.int16 PCM tensor).")
         .def("close", &celux::VideoEncoder::close,
              "Finalize file and flush audio/video streams.")
+        .def_property_readonly("is_hardware_encoder", &celux::VideoEncoder::isHardwareEncoder,
+             "True if using hardware-accelerated encoding (NVENC).")
         .def(
             "__enter__", [](celux::VideoEncoder& e) -> celux::VideoEncoder&
             { return e; }, py::return_value_policy::reference_internal)
@@ -324,4 +349,47 @@ Example:
                  e.close();
                  return false;
              });
+
+    // ---------- Module-level functions -----------
+    m.def("get_available_encoders", []() -> py::list
+    {
+        py::list encoders;
+        void* it = nullptr;
+        const AVCodec* codec = nullptr;
+        while ((codec = av_codec_iterate(&it)))
+        {
+            if (av_codec_is_encoder(codec) && codec->type == AVMEDIA_TYPE_VIDEO)
+            {
+                py::dict info;
+                info["name"] = codec->name;
+                info["long_name"] = codec->long_name ? codec->long_name : "";
+                info["is_hardware"] = (codec->capabilities & AV_CODEC_CAP_HARDWARE) != 0 ||
+                                      std::string(codec->name).find("nvenc") != std::string::npos ||
+                                      std::string(codec->name).find("qsv") != std::string::npos ||
+                                      std::string(codec->name).find("amf") != std::string::npos;
+                encoders.append(info);
+            }
+        }
+        return encoders;
+    }, "Get a list of available video encoders with their properties.");
+
+    m.def("get_nvenc_encoders", []() -> py::list
+    {
+        py::list nvenc;
+        void* it = nullptr;
+        const AVCodec* codec = nullptr;
+        while ((codec = av_codec_iterate(&it)))
+        {
+            if (av_codec_is_encoder(codec) && 
+                codec->type == AVMEDIA_TYPE_VIDEO &&
+                std::string(codec->name).find("nvenc") != std::string::npos)
+            {
+                py::dict info;
+                info["name"] = codec->name;
+                info["long_name"] = codec->long_name ? codec->long_name : "";
+                nvenc.append(info);
+            }
+        }
+        return nvenc;
+    }, "Get a list of available NVENC hardware encoders.");
 }

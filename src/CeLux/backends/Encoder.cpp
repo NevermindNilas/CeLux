@@ -104,6 +104,20 @@ void Encoder::validateCodecContainerCompatibility()
 }
 
 
+void Encoder::initHardwareContext()
+{
+    // Create CUDA device context for NVENC
+    int ret = av_hwdevice_ctx_create(&hwDeviceCtx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
+    if (ret < 0)
+    {
+        CELUX_WARN("Failed to create CUDA device context for NVENC: {}", errorToString(ret));
+        hwDeviceCtx = nullptr;
+        return;
+    }
+    
+    CELUX_INFO("NVENC: CUDA hardware context initialized successfully");
+}
+
 void Encoder::initVideoStream()
 {
     videoStream = avformat_new_stream(formatCtx.get(), nullptr);
@@ -113,12 +127,59 @@ void Encoder::initVideoStream()
     }
 
     const AVCodec* codec = avcodec_find_encoder_by_name(properties.codec.c_str());
+    if (!codec)
+    {
+        throw std::runtime_error("Failed to find encoder: " + properties.codec);
+    }
+    
     videoCodecCtx.reset(avcodec_alloc_context3(codec));
     if (!videoCodecCtx)
     {
         throw std::runtime_error("Failed to allocate video codec context");
     }
 
+    // Check if this is an NVENC codec and initialize hardware context
+    bool isNvenc = nvenc::isNvencCodec(properties.codec);
+    if (isNvenc)
+    {
+        CELUX_INFO("NVENC encoder detected: {}", properties.codec);
+        initHardwareContext();
+        
+        if (hwDeviceCtx)
+        {
+            // NVENC prefers NV12 or P010 for 10-bit
+            // For software input, we'll use NV12 which NVENC can accept directly
+            properties.pixelFormat = AV_PIX_FMT_NV12;
+            
+            // Set up hardware frames context
+            hwFramesCtx = av_hwframe_ctx_alloc(hwDeviceCtx);
+            if (hwFramesCtx)
+            {
+                AVHWFramesContext* frames_ctx = (AVHWFramesContext*)hwFramesCtx->data;
+                frames_ctx->format = AV_PIX_FMT_CUDA;  // Hardware pixel format
+                frames_ctx->sw_format = AV_PIX_FMT_NV12;  // Software format for upload
+                frames_ctx->width = properties.width;
+                frames_ctx->height = properties.height;
+                frames_ctx->initial_pool_size = 20;  // Pre-allocate frames
+                
+                int ret = av_hwframe_ctx_init(hwFramesCtx);
+                if (ret < 0)
+                {
+                    CELUX_WARN("Failed to initialize hardware frames context: {}", errorToString(ret));
+                    av_buffer_unref(&hwFramesCtx);
+                    hwFramesCtx = nullptr;
+                }
+                else
+                {
+                    videoCodecCtx->hw_frames_ctx = av_buffer_ref(hwFramesCtx);
+                    CELUX_INFO("NVENC: Hardware frames context initialized ({}x{})", 
+                               properties.width, properties.height);
+                }
+            }
+        }
+    }
+
+    // Basic encoder settings
     videoCodecCtx->bit_rate = properties.bitRate;
     videoCodecCtx->width = properties.width;
     videoCodecCtx->height = properties.height;
@@ -127,10 +188,44 @@ void Encoder::initVideoStream()
     videoCodecCtx->gop_size = properties.gopSize;
     videoCodecCtx->max_b_frames = properties.maxBFrames;
     videoCodecCtx->pix_fmt = properties.pixelFormat;
-
-    if (avcodec_open2(videoCodecCtx.get(), codec, nullptr) < 0)
+    
+    // NVENC-specific options
+    AVDictionary* opts = nullptr;
+    if (isNvenc && hwDeviceCtx)
     {
-        throw std::runtime_error("Failed to open video codec: " + properties.codec);
+        // Set NVENC preset if specified
+        if (properties.preset >= 0)
+        {
+            // NVENC presets: p1 (fastest) to p7 (slowest/best quality)
+            std::string presetStr = "p" + std::to_string(std::clamp(properties.preset, 1, 7));
+            av_dict_set(&opts, "preset", presetStr.c_str(), 0);
+        }
+        else
+        {
+            // Default to p4 (balanced)
+            av_dict_set(&opts, "preset", "p4", 0);
+        }
+        
+        // Set constant quality mode if specified
+        if (properties.cq >= 0 && properties.cq <= 51)
+        {
+            av_dict_set(&opts, "rc", "constqp", 0);
+            av_dict_set_int(&opts, "qp", properties.cq, 0);
+        }
+        
+        // Enable B-frames for better compression (NVENC supports this)
+        av_dict_set(&opts, "b_ref_mode", "middle", 0);
+        
+        CELUX_INFO("NVENC: Using hardware-accelerated encoding");
+    }
+
+    int ret = avcodec_open2(videoCodecCtx.get(), codec, &opts);
+    av_dict_free(&opts);
+    
+    if (ret < 0)
+    {
+        throw std::runtime_error("Failed to open video codec: " + properties.codec + 
+                                 " (" + errorToString(ret) + ")");
     }
 
     avcodec_parameters_from_context(videoStream->codecpar, videoCodecCtx.get());
@@ -273,6 +368,18 @@ void Encoder::close()
     // If not NOFILE, close I/O
     if (!(formatCtx->oformat->flags & AVFMT_NOFILE) && formatCtx->pb)
         avio_closep(&formatCtx->pb);
+
+    // Clean up hardware contexts
+    if (hwFramesCtx)
+    {
+        av_buffer_unref(&hwFramesCtx);
+        hwFramesCtx = nullptr;
+    }
+    if (hwDeviceCtx)
+    {
+        av_buffer_unref(&hwDeviceCtx);
+        hwDeviceCtx = nullptr;
+    }
 
     videoCodecCtx.reset();
     audioCodecCtx.reset();

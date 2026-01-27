@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <Factory.hpp>
+#include <cpu/RGBToAutoLibyuv.hpp>
 
 namespace fs = std::filesystem;
 
@@ -14,34 +15,65 @@ VideoEncoder::VideoEncoder(const std::string& filename,
                            std::optional<float> fps, std::optional<int> audioBitRate,
                            std::optional<int> audioSampleRate,
                            std::optional<int> audioChannels,
-                           std::optional<std::string> audioCodec)
+                           std::optional<std::string> audioCodec,
+                           std::optional<int> preset,
+                           std::optional<int> cq,
+                           std::optional<std::string> pixelFormat)
 {
     auto properties = inferEncodingProperties(filename, codec, width, height, bitRate,
                                               fps, audioBitRate, audioSampleRate,
-                                              audioChannels, audioCodec);
+                                              audioChannels, audioCodec,
+                                              preset, cq, pixelFormat);
     this->width = properties.width;
     this->height = properties.height;
+    this->outputPixelFormat = properties.pixelFormat;
 
     encoder = std::make_unique<celux::Encoder>(filename, properties);
+    
+    // After encoder init, check if NVENC changed the pixel format (e.g., to NV12)
+    this->outputPixelFormat = encoder->Properties().pixelFormat;
 }
+
 celux::Encoder::EncodingProperties VideoEncoder::inferEncodingProperties(
     const std::string& filename, std::optional<std::string> codec,
     std::optional<int> width, std::optional<int> height, std::optional<int> bitRate,
     std::optional<float> fps, std::optional<int> audioBitRate,
     std::optional<int> audioSampleRate, std::optional<int> audioChannels,
-    std::optional<std::string> audioCodec)
+    std::optional<std::string> audioCodec,
+    std::optional<int> preset, std::optional<int> cq,
+    std::optional<std::string> pixelFormat)
 {
     // Populate video encoding settings
     celux::Encoder::EncodingProperties props;
     props.codec = codec.value_or("h264_mf");
     props.width = width.value_or(1920);
     props.height = height.value_or(1080);
-    props.bitRate = bitRate.value_or(4000000); // 4 Mbps default
-    // fps in VideoEncoder::EncodingProperties is int, so round
+    props.bitRate = bitRate.value_or(4000000); // 4 Mbps default
     props.fps = static_cast<int>(std::round(fps.value_or(30.0f)));
     props.gopSize = 60;
     props.maxBFrames = 2;
-    props.pixelFormat = AV_PIX_FMT_YUV420P;
+    
+    // Parse pixel format string
+    if (pixelFormat.has_value())
+    {
+        AVPixelFormat fmt = av_get_pix_fmt(pixelFormat->c_str());
+        if (fmt != AV_PIX_FMT_NONE)
+        {
+            props.pixelFormat = fmt;
+        }
+        else
+        {
+            props.pixelFormat = AV_PIX_FMT_YUV420P;
+        }
+    }
+    else
+    {
+        props.pixelFormat = AV_PIX_FMT_YUV420P;
+    }
+    
+    // NVENC-specific options
+    props.preset = preset.value_or(-1);  // -1 means use default
+    props.cq = cq.value_or(-1);          // -1 means use bitrate mode
 
     // Populate audio encoding settings (0 → no audio)
     if (audioBitRate.has_value() && audioSampleRate.has_value() &&
@@ -54,7 +86,6 @@ celux::Encoder::EncodingProperties VideoEncoder::inferEncodingProperties(
     }
     else
     {
-        // leave at default-zero if no audio requested
         props.audioBitRate = 0;
         props.audioSampleRate = 0;
         props.audioChannels = 0;
@@ -69,14 +100,16 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
     if (!encoder)
         throw std::runtime_error("Encoder is not initialized");
 
-    py::gil_scoped_release release; // <<< release GIL
+    py::gil_scoped_release release;
+    
+    // Allocate frame with the actual output pixel format (may be NV12 for NVENC)
     celux::Frame convertedFrame;
-    convertedFrame.get()->format = AV_PIX_FMT_YUV420P;
+    convertedFrame.get()->format = outputPixelFormat;
     convertedFrame.get()->width = width;
     convertedFrame.get()->height = height;
     convertedFrame.allocateBuffer(32);
 
-    // ✅ Actually move tensor to CPU and make contiguous
+    // Move tensor to CPU and make contiguous
     if (frame.device().is_cuda())
     {
         frame = frame.to(torch::kCPU);
@@ -87,17 +120,17 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
         frame = frame.contiguous();
     }
 
-
+    // Use libyuv converter for better color accuracy
     if (!converter)
     { 
-        converter = std::make_unique<celux::conversion::cpu::RGBToAutoConverter>(
-            width, height, AV_PIX_FMT_YUV420P);
+        converter = std::make_unique<celux::conversion::cpu::RGBToAutoLibyuvConverter>(
+            width, height, outputPixelFormat);
     }
 
-    // ✅ Pass raw pointer from safe CPU tensor
+    // Convert RGB24 → YUV (I420 or NV12)
     converter->convert(convertedFrame, frame.data_ptr<uint8_t>());
 
-    // ✅ Send converted AVFrame to encoder
+    // Send converted AVFrame to encoder
     encoder->encodeFrame(convertedFrame);
 }
 

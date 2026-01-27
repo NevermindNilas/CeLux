@@ -10,6 +10,20 @@
 namespace celux
 {
 
+// NVENC supported codecs
+namespace nvenc
+{
+    constexpr const char* H264 = "h264_nvenc";
+    constexpr const char* HEVC = "hevc_nvenc";
+    constexpr const char* AV1  = "av1_nvenc";
+    
+    inline bool isNvencCodec(const std::string& codec)
+    {
+        return codec == H264 || codec == HEVC || codec == AV1 ||
+               codec.find("_nvenc") != std::string::npos;
+    }
+} // namespace nvenc
+
 class Encoder
 {
   public:
@@ -27,6 +41,11 @@ class Encoder
         int audioSampleRate;
         int audioChannels;
         std::string audioCodec;
+        
+        // NVENC/Hardware encoding options
+        bool useHardwareEncoder = false;  // Auto-detected from codec name
+        int preset = -1;  // NVENC preset (0=fastest, higher=better quality)
+        int cq = -1;      // Constant quality mode (0-51, lower=better)
     };
 
     Encoder() = default;
@@ -38,6 +57,9 @@ class Encoder
     bool encodeAudioFrame(const Frame& frame);
     void writePacket();
     void close();
+    
+    // Check if hardware encoding is active
+    bool isHardwareEncoder() const { return hwDeviceCtx != nullptr; }
 
     // Deleted copy constructor and assignment operator
     Encoder(const Encoder&) = delete;
@@ -54,13 +76,14 @@ class Encoder
   private:
     void initVideoStream();
     void initAudioStream();
+    void initHardwareContext();  // NEW: Initialize CUDA device context for NVENC
     void openOutputFile();
     void validateCodecContainerCompatibility();
     std::string
-    inferContainerFormat(const std::string& filename) const; // New helper function
+    inferContainerFormat(const std::string& filename) const;
 
     EncodingProperties properties;
-    std::string filename; // Store filename for later use
+    std::string filename;
     AVFormatContextPtr formatCtx;
     AVCodecContextPtr videoCodecCtx;
     AVCodecContextPtr audioCodecCtx;
@@ -68,9 +91,14 @@ class Encoder
     AVStream* audioStream = nullptr;
     SwrContextPtr swrCtx;
     AVPacketPtr pkt;
-    int64_t nextAudioPts = 0; // in audio samples
+    int64_t nextAudioPts = 0;
+    
+    // Hardware encoding context (NVENC)
+    AVBufferRef* hwDeviceCtx = nullptr;   // CUDA device context
+    AVBufferRef* hwFramesCtx = nullptr;   // Hardware frames context
 };
 
 } // namespace celux
 
 #endif // ENCODER_HPP
+

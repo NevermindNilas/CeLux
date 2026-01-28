@@ -95,6 +95,7 @@ class Encoder
     SwrContextPtr swrCtx;
     AVPacketPtr pkt;
     int64_t nextAudioPts = 0;
+    int64_t nextVideoPts = 0;
     
     // Hardware encoding context (NVENC)
     AVBufferRef* hwDeviceCtx = nullptr;   // CUDA device context

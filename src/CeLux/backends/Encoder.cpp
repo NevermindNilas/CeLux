@@ -279,12 +279,12 @@ bool Encoder::encodeFrame(const Frame& frame)
         return false;
 
     // 1) Optionally check if PTS is unset (or negative).
-    static int64_t frameCounter = 0;
+    // 1) Optionally check if PTS is unset (or negative).
     AVFrame* avf = frame.get();
     if (avf->pts == AV_NOPTS_VALUE || avf->pts < 0)
     {
         // Assign a strictly increasing PTS.
-        avf->pts = frameCounter++;
+        avf->pts = nextVideoPts++;
     }
 
     AVFrame* frameToEncode = avf;

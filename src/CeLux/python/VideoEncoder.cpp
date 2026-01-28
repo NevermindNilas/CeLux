@@ -167,6 +167,7 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
         cpuFrame.get()->width = width;
         cpuFrame.get()->height = height;
         cpuFrame.allocateBuffer(32);
+        cpuFrame.get()->pts = AV_NOPTS_VALUE;
     }
     
     celux::Frame& convertedFrame = cpuFrame;

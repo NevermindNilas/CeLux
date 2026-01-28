@@ -10,7 +10,7 @@ import torch
 import numpy as np
 
 # Add FFmpeg DLLs
-ffmpeg_bin = r"D:\CeLux\external\ffmpeg\bin"
+ffmpeg_bin = r"C:\Users\nilas\AppData\Roaming\TheAnimeScripter\ffmpeg_shared"
 if os.path.exists(ffmpeg_bin):
     os.add_dll_directory(ffmpeg_bin)
 
@@ -25,7 +25,7 @@ except ImportError:
     HAS_TORCHMETRICS = False
 
 INPUT_VIDEO = r"D:\CeLux\benchmark_source.mp4"
-NUM_FRAMES_TO_COMPARE = 50  # Compare first N frames
+NUM_FRAMES_TO_COMPARE = 100  # Compare first N frames
 
 
 def calculate_psnr(original: torch.Tensor, encoded: torch.Tensor) -> float:

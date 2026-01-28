@@ -447,6 +447,7 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
 
         converter->convert(frame, buffer);
         return true;
+    }
 }
 
 bool Decoder::seekFrame(int frameIndex)

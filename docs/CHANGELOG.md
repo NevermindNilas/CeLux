@@ -1,4 +1,24 @@
 
+### **Version 0.8.6 (2026-01-28)**
+
+#### **Major: High-Performance Encoding Pipeline (GPU & CPU)**
+- **Feature:** **Zero-Copy GPU Encoding** via `av_hwframe_transfer_data`.
+  - Implements a direct CUDA-to-NVENC path, eliminating PCIe roundtrips (Device -> Host -> Device).
+  - Custom CUDA kernels for `RGB -> NV12`, `P010`, `NV16`, and `YUV444`.
+  - **Performance:** Achieves **~410 FPS** for 1080p GPU encoding (vs ~218 previously).
+  - **Quality:** Verified **36.5 dB PSNR / 0.9995 SSIM**.
+
+- **Feature:** **Optimized CPU Encoding**.
+  - Enabled **Multithreading** for software encoders (e.g., `libx264`), unlocking full CPU utilization (previously single-threaded).
+  - Implemented **Frame Buffer Reuse** (`cpuFrame`), saving ~3MB allocation/deallocation overhead per frame.
+  - **Performance:** Achieves **~160 FPS** for 1080p CPU encoding (vs ~98 previously).
+  - **Fix:** Resolved `non-sequential PTS` errors by correctly managing timestamp resets during frame reuse.
+
+#### **Fixes & Improvements**
+- **Fixed:** Critical bug in `Encoder.cpp` where a static frame counter caused timestamp collisions across multiple encoder instances.
+- **Fixed:** CPU encoding quality metrics now properly validated (fixed `nan` PSNR issues).
+- **Improved:** `VideoEncoder` now automatically handles memory transfers and formatting for optimal performance on both backends.
+
 ### **Version 0.8.5 (2026-01-21)**
 
 #### **Compatibility**

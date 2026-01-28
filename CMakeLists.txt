@@ -20,7 +20,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED ENV{CMAKE_TOOLCHAIN_FILE})
   endif()
 endif()
 
-project(CeLux VERSION 0.8.5 LANGUAGES CXX)
+project(CeLux VERSION 0.8.6 LANGUAGES CXX)
 
 # ─── Compiler options ─── 
 # Note: These apply to CXX compiler only. CUDA compiler options are set separately.

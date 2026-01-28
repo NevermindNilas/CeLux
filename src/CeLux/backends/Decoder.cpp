@@ -3,6 +3,7 @@
 #include "BatchDecoder.hpp"
 #include <Factory.hpp>
 #include "conversion/cpu/AutoToRGB.hpp"
+#include <cstring>
 
 using namespace celux::error;
 
@@ -154,6 +155,14 @@ void Decoder::initialize(const std::string& filePath)
     {
         autoConverter->setForce8Bit(force_8bit);
     }
+
+    // Enable pre-conversion in decode thread for CPU decoder
+    preconvertEnabled = true;
+    int bitDepth = getBitDepth();
+    int elemSize = (force_8bit || bitDepth <= 8) ? 1 : 2;
+    convertedFrameBytes = static_cast<size_t>(properties.width) *
+                          static_cast<size_t>(properties.height) * 3 *
+                          static_cast<size_t>(elemSize);
 
     const AVCodecParameters* params = formatCtx->streams[videoStreamIndex]->codecpar;
     AVColorSpace color_space = params->color_space;         // matrix_coefficients
@@ -388,25 +397,56 @@ bool Decoder::decodeNextFrame(void* buffer, double* frame_timestamp)
     }
 
     std::unique_lock<std::mutex> lock(queueMutex);
-    queueCond.wait(lock, [this] { return !frameQueue.empty() || isFinished || stopDecoding; });
+    queueCond.wait(lock, [this]
+                   {
+                       return (preconvertEnabled ? !convertedQueue.empty() : !frameQueue.empty()) ||
+                              isFinished || stopDecoding;
+                   });
 
-    if (frameQueue.empty())
+    if (preconvertEnabled)
     {
-        return false;
+        if (convertedQueue.empty())
+        {
+            return false;
+        }
+
+        ConvertedFrame cf = std::move(convertedQueue.front());
+        convertedQueue.pop();
+        producerCond.notify_one();
+        lock.unlock();
+
+        if (frame_timestamp)
+        {
+            *frame_timestamp = cf.timestamp;
+        }
+
+        if (!buffer)
+        {
+            throw std::runtime_error("Decoder::decodeNextFrame: null output buffer");
+        }
+
+        std::memcpy(buffer, cf.buffer.data(), cf.buffer.size());
+        return true;
     }
-
-    Frame frame = std::move(frameQueue.front());
-    frameQueue.pop();
-    producerCond.notify_one();
-    lock.unlock();
-
-    if (frame_timestamp)
+    else
     {
-        *frame_timestamp = getFrameTimestamp(frame.get());
-    }
+        if (frameQueue.empty())
+        {
+            return false;
+        }
 
-    converter->convert(frame, buffer);
-    return true;
+        Frame frame = std::move(frameQueue.front());
+        frameQueue.pop();
+        producerCond.notify_one();
+        lock.unlock();
+
+        if (frame_timestamp)
+        {
+            *frame_timestamp = getFrameTimestamp(frame.get());
+        }
+
+        converter->convert(frame, buffer);
+        return true;
 }
 
 bool Decoder::seekFrame(int frameIndex)
@@ -492,6 +532,8 @@ void Decoder::close()
         converter->synchronize();
         converter.reset();
     }
+    preconvertEnabled = false;
+    convertedFrameBytes = 0;
     videoStreamIndex = -1;
     properties = VideoProperties{};
     CELUX_DEBUG("BASE DECODER: Decoder closed");
@@ -1165,7 +1207,7 @@ void Decoder::setPrefetchSize(size_t size)
 size_t Decoder::getPrefetchBufferedCount() const
 {
     std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(queueMutex));
-    return frameQueue.size();
+    return preconvertEnabled ? convertedQueue.size() : frameQueue.size();
 }
 
 void Decoder::startPrefetch()
@@ -1278,6 +1320,8 @@ void Decoder::clearQueue()
     std::lock_guard<std::mutex> lock(queueMutex);
     std::queue<Frame> empty;
     std::swap(frameQueue, empty);
+    std::queue<ConvertedFrame> emptyConverted;
+    std::swap(convertedQueue, emptyConverted);
     isFinished = false;
 }
 
@@ -1289,7 +1333,12 @@ void Decoder::decodingLoop()
     {
         {
             std::unique_lock<std::mutex> lock(queueMutex);
-            producerCond.wait(lock, [this] { return frameQueue.size() < maxQueueSize || stopDecoding; });
+            producerCond.wait(lock, [this]
+                               {
+                                   size_t qsize = preconvertEnabled ? convertedQueue.size()
+                                                                  : frameQueue.size();
+                                   return qsize < maxQueueSize || stopDecoding;
+                               });
         }
 
         if (stopDecoding) break;
@@ -1298,12 +1347,46 @@ void Decoder::decodingLoop()
         
         if (ret == 0)
         {
-            Frame queuedFrame(localFrame);
+            if (preconvertEnabled)
             {
-                std::unique_lock<std::mutex> lock(queueMutex);
-                frameQueue.push(std::move(queuedFrame));
-                queueCond.notify_one();
+                ConvertedFrame cf;
+                cf.timestamp = getFrameTimestamp(localFrame.get());
+                if (convertedFrameBytes == 0)
+                {
+                    int bitDepth = getBitDepth();
+                    int elemSize = (force_8bit || bitDepth <= 8) ? 1 : 2;
+                    convertedFrameBytes = static_cast<size_t>(properties.width) *
+                                          static_cast<size_t>(properties.height) * 3 *
+                                          static_cast<size_t>(elemSize);
+                }
+                cf.buffer.resize(convertedFrameBytes);
+
+                if (!converter)
+                {
+                    CELUX_WARN("Decoder: converter missing during preconversion; falling back");
+                    Frame queuedFrame(localFrame);
+                    std::unique_lock<std::mutex> lock(queueMutex);
+                    frameQueue.push(std::move(queuedFrame));
+                    queueCond.notify_one();
+                }
+                else
+                {
+                    converter->convert(localFrame, cf.buffer.data());
+                    std::unique_lock<std::mutex> lock(queueMutex);
+                    convertedQueue.push(std::move(cf));
+                    queueCond.notify_one();
+                }
             }
+            else
+            {
+                Frame queuedFrame(localFrame);
+                {
+                    std::unique_lock<std::mutex> lock(queueMutex);
+                    frameQueue.push(std::move(queuedFrame));
+                    queueCond.notify_one();
+                }
+            }
+
             av_frame_unref(localFrame.get());
             continue;
         }

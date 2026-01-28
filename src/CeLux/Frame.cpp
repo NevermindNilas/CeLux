@@ -2,6 +2,11 @@
 
 #include "Frame.hpp"
 
+extern "C"
+{
+#include <libavutil/hwcontext.h>
+}
+
 using namespace celux::error;
 
 namespace celux
@@ -57,6 +62,16 @@ Frame::Frame(AVBufferRef* hw_frames_ref) : frame(av_frame_alloc())
         CELUX_ERROR("Failed to set hardware frames context in hardware constructor");
         av_frame_free(&frame);
         throw CxException("Failed to set hardware frames context");
+    }
+
+    // Initialize format and dimensions from hw frames context
+    AVHWFramesContext* frames_ctx =
+        reinterpret_cast<AVHWFramesContext*>(frame->hw_frames_ctx->data);
+    if (frames_ctx)
+    {
+        frame->format = frames_ctx->format;
+        frame->width = frames_ctx->width;
+        frame->height = frames_ctx->height;
     }
 
     // Allocate the frame buffers in hardware memory

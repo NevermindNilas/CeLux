@@ -61,6 +61,9 @@ class Encoder
     // Check if hardware encoding is active
     bool isHardwareEncoder() const { return hwDeviceCtx != nullptr; }
 
+    // Access to hardware frames context for zero-copy GPU encode
+    AVBufferRef* getHwFramesCtx() const { return hwFramesCtx; }
+
     // Deleted copy constructor and assignment operator
     Encoder(const Encoder&) = delete;
     Encoder& operator=(const Encoder&) = delete;

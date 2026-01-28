@@ -192,6 +192,36 @@ public:
                 break;
         }
     }
+
+    /**
+     * @brief Copy converted YUV data from CUDA buffer to a CUDA AVFrame
+     *
+     * This performs device-to-device copies into an AV_PIX_FMT_CUDA frame
+     * allocated from a hw_frames_ctx (NVENC path). No PCIe transfer occurs.
+     */
+    void copyToCudaFrame(AVFrame* frame)
+    {
+        if (!frame) {
+            throw std::runtime_error("RGBToAutoGPUConverter::copyToCudaFrame: null frame");
+        }
+
+        switch (dst_fmt) {
+            case AV_PIX_FMT_NV12:
+                copyNv12ToCudaFrame(frame);
+                break;
+            case AV_PIX_FMT_P010LE:
+                copyP010ToCudaFrame(frame);
+                break;
+            case AV_PIX_FMT_YUV444P:
+                copyYuv444ToCudaFrame(frame);
+                break;
+            case AV_PIX_FMT_NV16:
+                copyNv16ToCudaFrame(frame);
+                break;
+            default:
+                break;
+        }
+    }
     
     /**
      * @brief Get pointer to CUDA NV12 buffer (for direct NVENC upload)
@@ -280,6 +310,21 @@ private:
             width, height / 2,
             cudaMemcpyDeviceToHost);
     }
+
+    void copyNv12ToCudaFrame(AVFrame* frame)
+    {
+        cudaMemcpy2D(
+            frame->data[0], frame->linesize[0],
+            cudaNv12Buffer, nv12Pitch,
+            width, height,
+            cudaMemcpyDeviceToDevice);
+
+        cudaMemcpy2D(
+            frame->data[1], frame->linesize[1],
+            cudaNv12Buffer + nv12Pitch * surfaceHeight, nv12Pitch,
+            width, height / 2,
+            cudaMemcpyDeviceToDevice);
+    }
     
     void copyP010ToCpuFrame(AVFrame* frame)
     {
@@ -296,6 +341,57 @@ private:
             cudaNv12Buffer + nv12Pitch * surfaceHeight, nv12Pitch,
             width * 2, height / 2,
             cudaMemcpyDeviceToHost);
+    }
+
+    void copyP010ToCudaFrame(AVFrame* frame)
+    {
+        cudaMemcpy2D(
+            frame->data[0], frame->linesize[0],
+            cudaNv12Buffer, nv12Pitch,
+            width * 2, height,
+            cudaMemcpyDeviceToDevice);
+
+        cudaMemcpy2D(
+            frame->data[1], frame->linesize[1],
+            cudaNv12Buffer + nv12Pitch * surfaceHeight, nv12Pitch,
+            width * 2, height / 2,
+            cudaMemcpyDeviceToDevice);
+    }
+
+    void copyYuv444ToCudaFrame(AVFrame* frame)
+    {
+        cudaMemcpy2D(
+            frame->data[0], frame->linesize[0],
+            cudaYBuffer, width,
+            width, height,
+            cudaMemcpyDeviceToDevice);
+
+        cudaMemcpy2D(
+            frame->data[1], frame->linesize[1],
+            cudaUBuffer, width,
+            width, height,
+            cudaMemcpyDeviceToDevice);
+
+        cudaMemcpy2D(
+            frame->data[2], frame->linesize[2],
+            cudaVBuffer, width,
+            width, height,
+            cudaMemcpyDeviceToDevice);
+    }
+
+    void copyNv16ToCudaFrame(AVFrame* frame)
+    {
+        cudaMemcpy2D(
+            frame->data[0], frame->linesize[0],
+            cudaNv12Buffer, nv12Pitch,
+            width, height,
+            cudaMemcpyDeviceToDevice);
+
+        cudaMemcpy2D(
+            frame->data[1], frame->linesize[1],
+            cudaNv12Buffer + nv12Pitch * surfaceHeight, nv12Pitch,
+            width, height,
+            cudaMemcpyDeviceToDevice);
     }
     
     void copyYuv444ToCpuFrame(AVFrame* frame)

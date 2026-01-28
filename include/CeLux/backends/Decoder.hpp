@@ -150,11 +150,19 @@ class Decoder
     std::atomic<bool> stopDecoding{false};
     std::atomic<bool> seekRequested{false};
     std::queue<Frame> frameQueue;
+    struct ConvertedFrame
+    {
+      std::vector<uint8_t> buffer;
+      double timestamp = 0.0;
+    };
+    std::queue<ConvertedFrame> convertedQueue;
     std::mutex queueMutex;
     std::condition_variable queueCond;
     std::condition_variable producerCond;
     size_t maxQueueSize = 20;
     bool isFinished = false;
+    std::atomic<bool> preconvertEnabled{false};
+    size_t convertedFrameBytes = 0;
 
     void decodingLoop();
     void startDecodingThread();

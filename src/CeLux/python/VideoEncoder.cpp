@@ -136,23 +136,24 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
         gpuConverter->convert(
             reinterpret_cast<const uint8_t*>(frame.data_ptr<uint8_t>()),
             width * 3);  // RGB24 pitch
-        
-        // Ensure CPU frame is allocated
-        if (!cpuFrame.get()->data[0])
+
+        // Allocate a CUDA AVFrame from NVENC's hw_frames_ctx (zero-copy path)
+        AVBufferRef* hwFramesCtx = encoder->getHwFramesCtx();
+        if (!hwFramesCtx)
         {
-            cpuFrame.get()->format = outputPixelFormat;
-            cpuFrame.get()->width = width;
-            cpuFrame.get()->height = height;
-            cpuFrame.allocateBuffer(32);
+            throw std::runtime_error("NVENC hardware frames context not initialized");
         }
-        
-        // Copy from CUDA buffer to CPU AVFrame (reusing buffer)
-        gpuConverter->copyToCpuFrame(cpuFrame.get());
-        
-        // Send to encoder (will upload to NVENC via av_hwframe_transfer_data)
-        // Note: encodeFrame copies data if needed, or we must ensure it's not modified
-        // while encoding. For sync encoding this is fine.
-        encoder->encodeFrame(cpuFrame);
+
+        celux::Frame hwFrame(hwFramesCtx);
+        hwFrame.get()->format = AV_PIX_FMT_CUDA;
+        hwFrame.get()->width = width;
+        hwFrame.get()->height = height;
+
+        // Copy from converter's CUDA buffer into the CUDA AVFrame (device-to-device)
+        gpuConverter->copyToCudaFrame(hwFrame.get());
+
+        // Send CUDA frame directly to encoder (no CPU upload)
+        encoder->encodeFrame(hwFrame);
         return;
     }
 #endif

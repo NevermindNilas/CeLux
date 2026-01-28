@@ -289,38 +289,46 @@ bool Encoder::encodeFrame(const Frame& frame)
 
     AVFrame* frameToEncode = avf;
     AVFrame* hwFrame = nullptr;
-    
-    // If using NVENC with hardware frames, we need to upload the frame to GPU
+
+    // If using NVENC with hardware frames, decide whether we need an upload
     if (hwFramesCtx && videoCodecCtx->hw_frames_ctx)
     {
-        // Allocate a hardware frame from the pool
-        hwFrame = av_frame_alloc();
-        if (!hwFrame)
+        // If the input is already a CUDA frame, use it directly (zero-copy)
+        if (avf->format == AV_PIX_FMT_CUDA)
         {
-            CELUX_ERROR("Failed to allocate hardware frame");
-            return false;
+            frameToEncode = avf;
         }
-        
-        int ret = av_hwframe_get_buffer(videoCodecCtx->hw_frames_ctx, hwFrame, 0);
-        if (ret < 0)
+        else
         {
-            CELUX_ERROR("Failed to get hardware frame buffer: {}", errorToString(ret));
-            av_frame_free(&hwFrame);
-            return false;
+            // Allocate a hardware frame from the pool
+            hwFrame = av_frame_alloc();
+            if (!hwFrame)
+            {
+                CELUX_ERROR("Failed to allocate hardware frame");
+                return false;
+            }
+
+            int ret = av_hwframe_get_buffer(videoCodecCtx->hw_frames_ctx, hwFrame, 0);
+            if (ret < 0)
+            {
+                CELUX_ERROR("Failed to get hardware frame buffer: {}", errorToString(ret));
+                av_frame_free(&hwFrame);
+                return false;
+            }
+
+            // Upload the software frame to GPU
+            ret = av_hwframe_transfer_data(hwFrame, avf, 0);
+            if (ret < 0)
+            {
+                CELUX_ERROR("Failed to upload frame to GPU: {}", errorToString(ret));
+                av_frame_free(&hwFrame);
+                return false;
+            }
+
+            // Copy metadata (PTS, etc.)
+            hwFrame->pts = avf->pts;
+            frameToEncode = hwFrame;
         }
-        
-        // Upload the software frame to GPU
-        ret = av_hwframe_transfer_data(hwFrame, avf, 0);
-        if (ret < 0)
-        {
-            CELUX_ERROR("Failed to upload frame to GPU: {}", errorToString(ret));
-            av_frame_free(&hwFrame);
-            return false;
-        }
-        
-        // Copy metadata (PTS, etc.)
-        hwFrame->pts = avf->pts;
-        frameToEncode = hwFrame;
     }
 
     // 2) Send the frame to the encoder

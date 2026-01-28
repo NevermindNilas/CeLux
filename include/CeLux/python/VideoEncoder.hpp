@@ -6,6 +6,11 @@
 #include <filesystem>
 #include <optional>
 
+#ifdef CELUX_ENABLE_CUDA
+#include <cuda_runtime.h>
+#include <gpu/RGBToAutoGPU.hpp>
+#endif
+
 namespace celux
 {
 
@@ -43,6 +48,12 @@ class VideoEncoder
     int width, height;
     AVPixelFormat outputPixelFormat;  // Actual pixel format used
     std::unique_ptr<celux::conversion::IConverter> converter;
+    
+#ifdef CELUX_ENABLE_CUDA
+    // GPU converter for zero-copy encoding when tensor is on CUDA
+    std::unique_ptr<celux::conversion::gpu::RGBToAutoGPUConverter> gpuConverter;
+    cudaStream_t encoderStream = nullptr;
+#endif
     
     celux::Encoder::EncodingProperties inferEncodingProperties(
         const std::string& filename, std::optional<std::string> codec,

@@ -293,6 +293,8 @@ if(CELUX_ENABLE_CUDA)
       ${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux
       ${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/backends
       ${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/backends/cuda
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/conversion
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/conversion/gpu
     )
     target_compile_definitions(CeLuxCuda PUBLIC CELUX_ENABLE_CUDA)
     # Do NOT link CUDA::cudart here - let the runtime be resolved at link time
@@ -341,6 +343,7 @@ target_include_directories(CeLuxLib
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/python>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/conversion>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/conversion/cpu>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/CeLux/conversion/gpu>
     $<INSTALL_INTERFACE:include>
     ${CELUX_FFMPEG_INCS}
     $<$<BOOL:${CELUX_BUILD_PYTHON}>:${Python3_INCLUDE_DIRS}>

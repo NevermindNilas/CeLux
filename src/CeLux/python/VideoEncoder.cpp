@@ -102,7 +102,55 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
 
     py::gil_scoped_release release;
     
-    // Allocate frame with the actual output pixel format (may be NV12 for NVENC)
+#ifdef CELUX_ENABLE_CUDA
+    // GPU path: When tensor is on CUDA and we're using NVENC
+    if (frame.device().is_cuda() && encoder->isHardwareEncoder())
+    {
+        // Convert tensor dtype to uint8 if needed (on GPU)
+        if (frame.dtype() == torch::kFloat16 || frame.dtype() == torch::kFloat32)
+        {
+            frame = (frame.to(torch::kFloat32) * 255.0f).clamp(0, 255).to(torch::kUInt8);
+        }
+        else if (frame.scalar_type() == torch::ScalarType::UInt16)
+        {
+            frame = (frame.to(torch::kFloat32) / 257.0f).clamp(0, 255).to(torch::kUInt8);
+        }
+        else if (frame.dtype() != torch::kUInt8)
+        {
+            frame = frame.to(torch::kUInt8);
+        }
+        
+        if (!frame.is_contiguous())
+        {
+            frame = frame.contiguous();
+        }
+        
+        // Create GPU converter if not exists
+        if (!gpuConverter)
+        {
+            gpuConverter = std::make_unique<celux::conversion::gpu::RGBToAutoGPUConverter>(
+                width, height, outputPixelFormat, encoderStream);
+        }
+        
+        // Allocate hardware frame for NVENC
+        celux::Frame hwFrame;
+        hwFrame.get()->format = outputPixelFormat;
+        hwFrame.get()->width = width;
+        hwFrame.get()->height = height;
+        hwFrame.allocateBuffer(32);
+        
+        // Convert RGB to NV12/YUV on GPU (zero-copy)
+        gpuConverter->convert(hwFrame.get(), 
+                              reinterpret_cast<const uint8_t*>(frame.data_ptr<uint8_t>()),
+                              width * 3);  // RGB24 pitch
+        
+        // Send to encoder (will upload to NVENC directly)
+        encoder->encodeFrame(hwFrame);
+        return;
+    }
+#endif
+    
+    // CPU path (fallback for non-CUDA tensors or software encoders)
     celux::Frame convertedFrame;
     convertedFrame.get()->format = outputPixelFormat;
     convertedFrame.get()->width = width;
@@ -116,33 +164,24 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
     }
 
     // Convert tensor dtype to uint8 if needed
-    // Supports: uint8, uint16 (RGB48), float16, float32
     if (frame.dtype() == torch::kFloat16 || frame.dtype() == torch::kFloat32)
     {
-        // Float tensors assumed to be in [0, 1] range
-        // Convert to [0, 255] uint8
         frame = (frame.to(torch::kFloat32) * 255.0f).clamp(0, 255).to(torch::kUInt8);
     }
     else if (frame.scalar_type() == torch::ScalarType::UInt16)
     {
-        // uint16 (RGB48): [0, 65535] -> [0, 255]
-        // Divide by 257 to convert 16-bit to 8-bit (65535/257 = 255)
         frame = (frame.to(torch::kFloat32) / 257.0f).clamp(0, 255).to(torch::kUInt8);
     }
     else if (frame.dtype() == torch::kInt16 || frame.dtype() == torch::kInt32)
     {
-        // Signed integers - convert via float
         frame = frame.to(torch::kFloat32).clamp(0, 255).to(torch::kUInt8);
     }
     else if (frame.dtype() == torch::kInt64)
     {
-        // int64 - clamp and convert
         frame = frame.clamp(0, 255).to(torch::kUInt8);
     }
     else if (frame.dtype() != torch::kUInt8)
     {
-        // Try generic conversion for any other type
-        // Attempt to cast to uint8 (may fail for unsupported types)
         frame = frame.to(torch::kUInt8);
     }
 
@@ -151,7 +190,7 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
         frame = frame.contiguous();
     }
 
-    // Use libyuv converter for better color accuracy
+    // Use libyuv converter for CPU path
     if (!converter)
     { 
         converter = std::make_unique<celux::conversion::cpu::RGBToAutoLibyuvConverter>(

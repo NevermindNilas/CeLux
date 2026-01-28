@@ -109,10 +109,41 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
     convertedFrame.get()->height = height;
     convertedFrame.allocateBuffer(32);
 
-    // Move tensor to CPU and make contiguous
+    // Move tensor to CPU if on CUDA
     if (frame.device().is_cuda())
     {
         frame = frame.to(torch::kCPU);
+    }
+
+    // Convert tensor dtype to uint8 if needed
+    // Supports: uint8, uint16 (RGB48), float16, float32
+    if (frame.dtype() == torch::kFloat16 || frame.dtype() == torch::kFloat32)
+    {
+        // Float tensors assumed to be in [0, 1] range
+        // Convert to [0, 255] uint8
+        frame = (frame.to(torch::kFloat32) * 255.0f).clamp(0, 255).to(torch::kUInt8);
+    }
+    else if (frame.scalar_type() == torch::ScalarType::UInt16)
+    {
+        // uint16 (RGB48): [0, 65535] -> [0, 255]
+        // Divide by 257 to convert 16-bit to 8-bit (65535/257 = 255)
+        frame = (frame.to(torch::kFloat32) / 257.0f).clamp(0, 255).to(torch::kUInt8);
+    }
+    else if (frame.dtype() == torch::kInt16 || frame.dtype() == torch::kInt32)
+    {
+        // Signed integers - convert via float
+        frame = frame.to(torch::kFloat32).clamp(0, 255).to(torch::kUInt8);
+    }
+    else if (frame.dtype() == torch::kInt64)
+    {
+        // int64 - clamp and convert
+        frame = frame.clamp(0, 255).to(torch::kUInt8);
+    }
+    else if (frame.dtype() != torch::kUInt8)
+    {
+        // Try generic conversion for any other type
+        // Attempt to cast to uint8 (may fail for unsupported types)
+        frame = frame.to(torch::kUInt8);
     }
 
     if (!frame.is_contiguous())

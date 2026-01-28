@@ -119,34 +119,17 @@ class RGBToAutoLibyuvConverter : public ConverterBase
     /**
      * @brief Convert RGB24 to I420 (YUV420P) using libyuv.
      *
-     * libyuv's RAWToI420 treats input as RGB24 (R first in memory).
-     * The Matrix variant allows specifying BT.601/BT.709 coefficients.
+     * Note: CeLux decoder outputs RGB (R first in memory), which is "RAW" in libyuv terminology.
+     * libyuv's RGB24 functions expect BGR, so we use RAWToI420 instead.
      */
     bool convertToI420(const uint8_t* rgb, int rgbStride,
                        uint8_t* dstY, int dstStrideY,
                        uint8_t* dstU, int dstStrideU,
                        uint8_t* dstV, int dstStrideV)
     {
-        // Select YUV matrix based on colorspace
-        const libyuv::YuvConstants* matrix = &libyuv::kYuvI601Constants;
-        if (targetColorspace == AVCOL_SPC_BT709)
-        {
-            matrix = &libyuv::kYuvH709Constants;
-        }
-        else if (targetColorspace == AVCOL_SPC_BT2020_NCL || 
-                 targetColorspace == AVCOL_SPC_BT2020_CL)
-        {
-            matrix = &libyuv::kYuv2020Constants;
-        }
-
-        // RAWToJ420Matrix for limited->full range would be:
-        // For TV range (16-235), we use the standard I420 conversion
-        // libyuv::RAWToI420 uses BT.601 by default
-        // 
-        // Note: libyuv's "RAW" format is RGB24 (R at byte 0)
-        // We need to use RGB24ToI420Matrix for colorspace control
-        
-        int result = libyuv::RGB24ToI420(
+        // Use RAWToI420 since input is RGB (R first), not BGR
+        // libyuv naming: RAW = RGB, RGB24 = BGR
+        int result = libyuv::RAWToI420(
             rgb, rgbStride,
             dstY, dstStrideY,
             dstU, dstStrideU,
@@ -158,12 +141,14 @@ class RGBToAutoLibyuvConverter : public ConverterBase
 
     /**
      * @brief Convert RGB24 to NV12 using libyuv.
+     *
+     * Note: CeLux decoder outputs RGB (R first in memory), which is "RAW" in libyuv terminology.
      */
     bool convertToNV12(const uint8_t* rgb, int rgbStride,
                        uint8_t* dstY, int dstStrideY,
                        uint8_t* dstUV, int dstStrideUV)
     {
-        // libyuv doesn't have direct RGB24ToNV12, so we go through I420
+        // libyuv doesn't have direct RAWToNV12, so we go through I420
         // Allocate temp I420 buffer
         int uvWidth = (width + 1) / 2;
         int uvHeight = (height + 1) / 2;
@@ -171,8 +156,9 @@ class RGBToAutoLibyuvConverter : public ConverterBase
         std::vector<uint8_t> tempU(uvWidth * uvHeight);
         std::vector<uint8_t> tempV(uvWidth * uvHeight);
 
-        // RGB24 -> I420
-        int ret = libyuv::RGB24ToI420(
+        // RGB (RAW) -> I420
+        // Use RAWToI420 since input is RGB (R first), not BGR
+        int ret = libyuv::RAWToI420(
             rgb, rgbStride,
             dstY, dstStrideY,
             tempU.data(), uvWidth,
@@ -196,7 +182,7 @@ class RGBToAutoLibyuvConverter : public ConverterBase
     /**
      * @brief Convert RGB24 to I422 (YUV422P) using libyuv.
      * 
-     * libyuv doesn't have RGB24ToI422, so we convert RGB24→ARGB→I422.
+     * Note: CeLux outputs RGB (RAW), so we use RAWToARGB → ARGBToI422.
      */
     bool convertToI422(const uint8_t* rgb, int rgbStride,
                        uint8_t* dstY, int dstStrideY,
@@ -207,8 +193,8 @@ class RGBToAutoLibyuvConverter : public ConverterBase
         int argbStride = width * 4;
         std::vector<uint8_t> argb(argbStride * height);
         
-        // RGB24 -> ARGB (libyuv expects BGRA order, so use RGB24ToARGB)
-        int ret = libyuv::RGB24ToARGB(
+        // RGB (RAW) -> ARGB (use RAWToARGB since input is RGB, not BGR)
+        int ret = libyuv::RAWToARGB(
             rgb, rgbStride,
             argb.data(), argbStride,
             width, height);
@@ -229,7 +215,7 @@ class RGBToAutoLibyuvConverter : public ConverterBase
     /**
      * @brief Convert RGB24 to I444 (YUV444P) using libyuv.
      * 
-     * libyuv doesn't have RGB24ToI444, so we convert RGB24→ARGB→I444.
+     * Note: CeLux outputs RGB (RAW), so we use RAWToARGB → ARGBToI444.
      */
     bool convertToI444(const uint8_t* rgb, int rgbStride,
                        uint8_t* dstY, int dstStrideY,
@@ -240,8 +226,8 @@ class RGBToAutoLibyuvConverter : public ConverterBase
         int argbStride = width * 4;
         std::vector<uint8_t> argb(argbStride * height);
         
-        // RGB24 -> ARGB
-        int ret = libyuv::RGB24ToARGB(
+        // RGB (RAW) -> ARGB (use RAWToARGB since input is RGB, not BGR)
+        int ret = libyuv::RAWToARGB(
             rgb, rgbStride,
             argb.data(), argbStride,
             width, height);

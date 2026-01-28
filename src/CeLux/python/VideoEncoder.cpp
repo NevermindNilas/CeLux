@@ -132,20 +132,23 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
                 width, height, outputPixelFormat, encoderStream);
         }
         
-        // Allocate hardware frame for NVENC
-        celux::Frame hwFrame;
-        hwFrame.get()->format = outputPixelFormat;
-        hwFrame.get()->width = width;
-        hwFrame.get()->height = height;
-        hwFrame.allocateBuffer(32);
+        // Convert RGB to NV12/YUV on GPU (writes to CUDA buffer)
+        gpuConverter->convert(
+            reinterpret_cast<const uint8_t*>(frame.data_ptr<uint8_t>()),
+            width * 3);  // RGB24 pitch
         
-        // Convert RGB to NV12/YUV on GPU (zero-copy)
-        gpuConverter->convert(hwFrame.get(), 
-                              reinterpret_cast<const uint8_t*>(frame.data_ptr<uint8_t>()),
-                              width * 3);  // RGB24 pitch
+        // Allocate CPU AVFrame for encoder
+        celux::Frame convertedFrame;
+        convertedFrame.get()->format = outputPixelFormat;
+        convertedFrame.get()->width = width;
+        convertedFrame.get()->height = height;
+        convertedFrame.allocateBuffer(32);
         
-        // Send to encoder (will upload to NVENC directly)
-        encoder->encodeFrame(hwFrame);
+        // Copy from CUDA buffer to CPU AVFrame
+        gpuConverter->copyToCpuFrame(convertedFrame.get());
+        
+        // Send to encoder (will upload to NVENC via av_hwframe_transfer_data)
+        encoder->encodeFrame(convertedFrame);
         return;
     }
 #endif

@@ -196,6 +196,12 @@ void Encoder::initVideoStream()
     else
     {
         videoCodecCtx->pix_fmt = properties.pixelFormat;
+        
+        // Ensure multithreading for software encoders (e.g., libx264)
+        if (codec->capabilities & AV_CODEC_CAP_FRAME_THREADS)
+        {
+            videoCodecCtx->thread_count = 0; // 0 = auto-detect number of threads
+        }
     }
     
     // NVENC-specific options

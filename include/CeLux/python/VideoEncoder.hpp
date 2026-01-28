@@ -55,6 +55,9 @@ class VideoEncoder
     cudaStream_t encoderStream = nullptr;
 #endif
     
+    // Reusable CPU frame to avoid allocation churn
+    celux::Frame cpuFrame;
+    
     celux::Encoder::EncodingProperties inferEncodingProperties(
         const std::string& filename, std::optional<std::string> codec,
         std::optional<int> width, std::optional<int> height, std::optional<int> bitRate,

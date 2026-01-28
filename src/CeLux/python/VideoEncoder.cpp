@@ -137,28 +137,38 @@ void VideoEncoder::encodeFrame(torch::Tensor frame)
             reinterpret_cast<const uint8_t*>(frame.data_ptr<uint8_t>()),
             width * 3);  // RGB24 pitch
         
-        // Allocate CPU AVFrame for encoder
-        celux::Frame convertedFrame;
-        convertedFrame.get()->format = outputPixelFormat;
-        convertedFrame.get()->width = width;
-        convertedFrame.get()->height = height;
-        convertedFrame.allocateBuffer(32);
+        // Ensure CPU frame is allocated
+        if (!cpuFrame.get()->data[0])
+        {
+            cpuFrame.get()->format = outputPixelFormat;
+            cpuFrame.get()->width = width;
+            cpuFrame.get()->height = height;
+            cpuFrame.allocateBuffer(32);
+        }
         
-        // Copy from CUDA buffer to CPU AVFrame
-        gpuConverter->copyToCpuFrame(convertedFrame.get());
+        // Copy from CUDA buffer to CPU AVFrame (reusing buffer)
+        gpuConverter->copyToCpuFrame(cpuFrame.get());
         
         // Send to encoder (will upload to NVENC via av_hwframe_transfer_data)
-        encoder->encodeFrame(convertedFrame);
+        // Note: encodeFrame copies data if needed, or we must ensure it's not modified
+        // while encoding. For sync encoding this is fine.
+        encoder->encodeFrame(cpuFrame);
         return;
     }
 #endif
     
     // CPU path (fallback for non-CUDA tensors or software encoders)
-    celux::Frame convertedFrame;
-    convertedFrame.get()->format = outputPixelFormat;
-    convertedFrame.get()->width = width;
-    convertedFrame.get()->height = height;
-    convertedFrame.allocateBuffer(32);
+    
+    // Ensure CPU frame is allocated
+    if (!cpuFrame.get()->data[0])
+    {
+        cpuFrame.get()->format = outputPixelFormat;
+        cpuFrame.get()->width = width;
+        cpuFrame.get()->height = height;
+        cpuFrame.allocateBuffer(32);
+    }
+    
+    celux::Frame& convertedFrame = cpuFrame;
 
     // Move tensor to CPU if on CUDA
     if (frame.device().is_cuda())
